@@ -303,7 +303,7 @@ The following table lists all available options when initializing the file manag
 | `onFileSelect` | Function | `null` | Callback when file is selected |
 | `onError` | Function | `null` | Callback on error |
 | `onChange` | Function | `null` | Callback on any state change |
-| `customFileOpener` | Function | `null` | Custom file open handler (waht happens when double click any files) |
+| `customFileOpener` | Function | `null` | Custom file open handler (what happens when double click any files) |
 
 #### Default Banned Extensions
 
