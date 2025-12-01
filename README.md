@@ -139,7 +139,7 @@
 ### 1. Clone or Download
 
 ```bash
-git clone https://github.com/yourusername/my-file-manager-opensource.git
+git clone https://github.com/OskarCosimo/My-File-Manager-Opensource.git
 cd my-file-manager-opensource
 ```
 
