@@ -120,7 +120,10 @@
   - `fileinfo` (for MIME type detection)
   - `mbstring` (for filename handling)
   - `openssl` (for encryption)
-- **Apache/Nginx**: Web server with mod_rewrite (Apache) or equivalent
+- **Web Server**: 
+  - **Linux/Unix**: Apache (with mod_rewrite), Nginx, LiteSpeed, Others
+  - **Windows**: IIS, Apache (XAMPP/WAMP), Nginx
+  - **macOS**: Apache (MAMP/Homebrew), Nginx (Valet), Docker
 - **Disk Space**: Depends on your usage
 
 ### Client Requirements
