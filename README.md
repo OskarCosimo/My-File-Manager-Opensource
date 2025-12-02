@@ -419,7 +419,50 @@ $config = [
     'plugins' => []
 ];
 ```
+The authentication script, in production use, can also be integrated with a database variable or a session
 
+Variables:
+```
+$userId = 'user_' . $_SESSION['member_id'];
+$username = $_SESSION['username'];
+$userQuota = 5368709120; // 5GB in bytes
+// Custom authentication callback - Version with USE
+    'authCallback' => function() use ($userId, $username, $userQuota) {
+        // Le variabili sono già disponibili tramite 'use'
+        return [
+            'id' => $userId,
+            'username' => $username,
+            'quota' => $userQuota,
+            'permissions' => [
+                'read', 'write', 'delete', 'upload', 
+                'download', 'rename', 'copy', 'move', 
+                'mkdir', 'search', 'quota', 'info'
+            ]
+        ];
+    }
+```
+Session:
+```
+    // Custom authentication callback - Version with SESSION (remember to start the session before use it)
+    'authCallback' => function() {
+        // Controlla se l'utente è autenticato
+        if (!isset($_SESSION['user_id'])) {
+            return false; // Not authenticated
+        }
+        
+        // Leggi i dati dalla sessione
+        return [
+            'id' => $_SESSION['user_id'],
+            'username' => $_SESSION['username'],
+            'quota' => $_SESSION['user_quota'] ?? 5368709120, // Default 5GB
+            'permissions' => [
+                'read', 'write', 'delete', 'upload', 
+                'download', 'rename', 'copy', 'move', 
+                'mkdir', 'search', 'quota', 'info'
+            ]
+        ];
+    }
+```
 ---
 
 ## Embedding in HTML
