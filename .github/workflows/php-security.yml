@@ -26,8 +26,13 @@ jobs:
     - name: Check for dangerous functions
       run: |
         echo "Checking for potentially dangerous PHP functions..."
-        ! grep -r "eval(" src/ || (echo "❌ Found eval() usage" && exit 1)
-        ! grep -r "exec(" src/ || (echo "❌ Found exec() usage" && exit 1)
-        ! grep -r "system(" src/ || (echo "❌ Found system() usage" && exit 1)
-        ! grep -r "passthru(" src/ || (echo "❌ Found passthru() usage" && exit 1)
+        if grep -rE '\b(eval|exec|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor; then
+          echo "❌ Found dangerous function usage"
+          grep -rn -E '\b(eval|exec|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor
+          exit 1
+        fi
+        if grep -rE '\bpassthru\s*\(' src/ --exclude-dir=vendor | grep -v 'fpassthru'; then
+          echo "❌ Found passthru() usage (not fpassthru)"
+          exit 1
+        fi
         echo "✅ No dangerous functions found"
