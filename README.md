@@ -423,12 +423,9 @@ The authentication script, in production use, can also be integrated with a data
 
 Variables:
 ```
-$userId = 'user_' . $_SESSION['member_id'];
-$username = $_SESSION['username'];
-$userQuota = 5368709120; // 5GB in bytes
 // Custom authentication callback - Version with USE
     'authCallback' => function() use ($userId, $username, $userQuota) {
-        // Le variabili sono già disponibili tramite 'use'
+        // Variable are already available with 'use'
         return [
             'id' => $userId,
             'username' => $username,
@@ -445,12 +442,12 @@ Session:
 ```
     // Custom authentication callback - Version with SESSION (remember to start the session before use it)
     'authCallback' => function() {
-        // Controlla se l'utente è autenticato
+        // check if user is authenticated
         if (!isset($_SESSION['user_id'])) {
             return false; // Not authenticated
         }
         
-        // Leggi i dati dalla sessione
+        // Read data from session
         return [
             'id' => $_SESSION['user_id'],
             'username' => $_SESSION['username'],
