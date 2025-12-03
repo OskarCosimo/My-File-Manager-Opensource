@@ -88,23 +88,24 @@ function parseFileSize($size) {
 }
 
 try {
+    $PATHTOFILES = '/path/to/files';
     // Configuration array
     $config = [
-        // Root path for file operations (full server path, it will never be public)
-        'rootPath' => "/path/to/files/",
+        // Root path for file operations
+        'rootPath' => $PATHTOFILES,
         
-        // URL path for accessing files, this url automatically adds the file name after it with a querystring ?filename=... it is usefull for custom download scripts (you can leave it blank if you do not need it)
-        'rootUrl' => "https://...",
+        // URL path for accessing files, this url automatically adds the file name after it with a querystring ?filename=... it is usefull for custom download scripts
+        'rootUrl' => '', // https://... or leave blank to use the default
         
         // Maximum quota (supports units: B, KB, MB, GB, TB, PB)
         // Examples: 5368709120, "5GB", "5000MB"
         // Default (without unit) is bytes
-        'maxQuota' => "5GB",
+        'maxQuota' => parseFileSize('5GB'),
     
         // Maximum file size for upload (supports units: B, KB, MB, GB, TB, PB)
         // Examples: 524288000, "500MB", "0.5GB"
         // Default (without unit) is bytes
-        'maxFileSize' => "1GB",
+        'maxFileSize' => parseFileSize('0.5GB'),
         
         // Allowed mime types
         'allowedMimeTypes' => ['image/*', 'video/*', 'audio/*', 'text/*', 'application/pdf', 'text/plain'],
@@ -151,30 +152,27 @@ try {
         
         // Enable trash functionality
         'enableTrash' => true,
-        'trashPath' => $config['rootPath'] .'.trash/', //DO NOT CHANGE THE FOLDER PATH FOR THE TRASH
+        'trashPath' => $PATHTOFILES.'.trash/', //DO NOT CHANGE THE .trash NAME OR YOU HAVE TO PASS IT AS OPTION INTO THE INITIALIZZATION OF THE JAVASCRIPT FILE
         
-        // Security settings
+        // Security settings (the default tokenSecret is just an example)
         'security' => [
             'enableTokenAuth' => false,
-            'tokenSecret' => '',
+            'tokenSecret' => base64_encode(hash('sha512', 'user123').hash('sha256', 'user123')),
             'enableIPWhitelist' => false,
             'allowedIPs' => [],
         ],
         
         // Custom authentication callback
-    'authCallback' => function() {
-        // Your authentication logic
-        return [
-            'id' => 'user123',
-            'username' => 'john_doe',
-            'quota' => 5368709120, // bytes
-            'permissions' => [
-                'read', 'write', 'delete', 'upload', 
-                'download', 'rename', 'copy', 'move', 
-                'mkdir', 'search', 'quota', 'info'
-            ]
-        ];
-    },
+        'authCallback' => function() {
+    // Implement your authentication logic here
+    // Return user info array or false
+    return [
+        'id' => 'user123',
+        'username' => 'the_user_name',
+        'quota' => '524288000', // in bytes
+        'permissions' => ['read', 'write', 'delete', 'upload', 'download', 'rename', 'copy', 'move', 'mkdir', 'search', 'quota', 'info']
+    ];
+},
         
         // Plugins configuration
         'plugins' => []
@@ -202,9 +200,227 @@ try {
             throw new Exception('IP address not allowed', 403);
         }
     }
+
+    // Create trash folder if not exist
+if (!is_dir($config['trashPath'])) {
+    mkdir($config['trashPath'], 0755, true);
+    error_log("Created trash folder: {$config['trashPath']}");
+}
     
     // Get command from request
     $cmd = $_POST['cmd'] ?? $_GET['cmd'] ?? 'open';
+    while (ob_get_level()) ob_end_clean();
+/**
+ * Video Processing Endpoint with Rate Limiting (for video editing plugin)
+ * Rate limit: 4 videos every 30 minutes per IP (customizable)
+ * Supports trim, crop, resize, format conversion
+ * **BASE64 DECODED hash
+ */
+if ($cmd === 'video_process') {
+    // Rate limiting
+    $client_ip = $_SERVER['REMOTE_ADDR'];
+    $rate_limit_key = "video_process_rate_{$client_ip}";
+    $max_requests = 4;  // Max 4 videos per 30 minutes
+    $window = 1800;     // 30 minutes window
+    
+    // Check current rate limit count
+    $current_count = get_cache($rate_limit_key, 0);
+    
+    if ($current_count >= $max_requests) {
+        http_response_code(429);  // Too Many Requests
+        echo json_encode([
+            'success' => false, 
+            'error' => "Rate limit exceeded. Max {$max_requests} videos every 30 minutes. Try again later."
+        ]);
+        exit;
+    }
+    
+    // Increment counter and set expiration
+    set_cache($rate_limit_key, $current_count + 1, $window);
+    
+    // Validate input parameters
+    $file_hash = $_POST['target'] ?? '';
+    $params_json = $_POST['params'] ?? '{}';
+    $params = json_decode($params_json, true);
+    
+    if (empty($file_hash)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Missing target file hash']);
+        exit;
+    }
+    
+    // BASE64 DECODE hash
+    $decoded_filename = base64_decode($file_hash);
+    
+    // Construct absolute file path: root + decoded filename
+    $input_file = $config['rootPath'] . DIRECTORY_SEPARATOR . $decoded_filename;
+    
+    // Normalize path separators for Windows/Linux compatibility
+    $input_file = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $input_file);
+    
+    // Verify file exists and is readable
+    if (!file_exists($input_file)) {
+        http_response_code(404);
+        echo json_encode([
+            'success' => false, 
+            'error' => 'Target file not found',
+            'debug_raw_hash' => $file_hash,
+            'debug_decoded' => $decoded_filename,
+            'debug_path' => $input_file
+        ]);
+        exit;
+    }
+    
+    if (!is_readable($input_file)) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false, 
+            'error' => 'File not readable (permissions error)'
+        ]);
+        exit;
+    }
+    
+    // Security: Ensure file is within root directory (path traversal protection)
+    $input_file = realpath($input_file);
+    $root_realpath = realpath($config['rootPath']);
+    if (strpos($input_file, $root_realpath) !== 0) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Invalid file path (security check failed)']);
+        exit;
+    }
+    
+    // Generate output filename (_edited.mp4)
+    $output_file = preg_replace('/\.[^.]+$/', '_edited.' . ($params['format'] ?? 'mp4'), $input_file);
+    
+    // Overwrite original file if requested
+    if (!empty($params['overwrite'])) {
+        $output_file = $input_file;
+    }
+    
+    // Build FFmpeg command array
+    $ffmpeg_cmd = ['ffmpeg', '-y'];  // -y = overwrite without asking
+    
+    // Trim parameters (must come BEFORE -i input)
+    if (!empty($params['trim_start']) && (float)$params['trim_start'] > 0) {
+        $ffmpeg_cmd[] = '-ss';
+        $ffmpeg_cmd[] = (float)$params['trim_start'];
+    }
+    
+    if (!empty($params['trim_end']) && (float)$params['trim_end'] > 0) {
+        $duration = (float)$params['trim_end'] - ((float)($params['trim_start'] ?? 0));
+        if ($duration > 0) {
+            $ffmpeg_cmd[] = '-t';
+            $ffmpeg_cmd[] = $duration;
+        }
+    }
+    
+    // Input file (properly escaped)
+    $ffmpeg_cmd[] = '-i';
+    $ffmpeg_cmd[] = escapeshellarg($input_file);
+    
+    // Video filter chain
+    $video_filters = [];
+    
+    // Crop filter
+    if (!empty($params['crop_w']) && (int)$params['crop_w'] > 0 && 
+        !empty($params['crop_h']) && (int)$params['crop_h'] > 0) {
+        $video_filters[] = sprintf(
+            'crop=%d:%d:%d:%d',
+            (int)$params['crop_w'],
+            (int)$params['crop_h'],
+            max(0, (int)($params['crop_x'] ?? 0)),
+            max(0, (int)($params['crop_y'] ?? 0))
+        );
+    }
+    
+    // Resize filter (ensure even dimensions for H.264 compatibility)
+    if (!empty($params['resize_w']) && (int)$params['resize_w'] > 0) {
+        $resize_w = (int)$params['resize_w'] + ((int)$params['resize_w'] % 2);
+        $resize_h = (int)$params['resize_h'] + ((int)$params['resize_h'] % 2);
+        $video_filters[] = "scale={$resize_w}:{$resize_h}";
+    }
+    
+    // Apply video filters if any
+    if (!empty($video_filters)) {
+        $ffmpeg_cmd[] = '-vf';
+        $ffmpeg_cmd[] = implode(',', $video_filters);
+    }
+    
+    // Output codec settings by format
+    $output_format = $params['format'] ?? 'mp4';
+    
+    if ($output_format === 'mp4') {
+        // H.264 + AAC (web-optimized MP4)
+        $ffmpeg_cmd[] = '-c:v';
+        $ffmpeg_cmd[] = 'libx264';
+        $ffmpeg_cmd[] = '-preset';
+        $ffmpeg_cmd[] = 'fast';
+        $ffmpeg_cmd[] = '-crf';
+        $ffmpeg_cmd[] = '23';
+        $ffmpeg_cmd[] = '-c:a';
+        $ffmpeg_cmd[] = 'aac';
+        $ffmpeg_cmd[] = '-b:a';
+        $ffmpeg_cmd[] = '128k';
+        $ffmpeg_cmd[] = '-movflags';
+        $ffmpeg_cmd[] = '+faststart';  // Optimize for web streaming
+    } else {
+        // VP9 + Vorbis (WebM)
+        $ffmpeg_cmd[] = '-c:v';
+        $ffmpeg_cmd[] = 'libvpx-vp9';
+        $ffmpeg_cmd[] = '-crf';
+        $ffmpeg_cmd[] = '30';
+        $ffmpeg_cmd[] = '-b:v';
+        $ffmpeg_cmd[] = '0';
+        $ffmpeg_cmd[] = '-c:a';
+        $ffmpeg_cmd[] = 'libvorbis';
+    }
+    
+    // Final output file (escaped)
+    $ffmpeg_cmd[] = escapeshellarg($output_file);
+    
+    // Execute FFmpeg
+    $command_line = implode(' ', $ffmpeg_cmd);
+    
+    $output_lines = [];
+    $return_code = 0;
+    exec($command_line, $output_lines, $return_code);
+    
+    // Check FFmpeg return code
+    if ($return_code !== 0) {
+        $error_msg = implode("\n", $output_lines);
+        error_log("FFmpeg ERROR [{$return_code}] for {$input_file}: {$error_msg}");
+        
+        echo json_encode([
+            'success' => false,
+            'error' => 'FFmpeg processing failed (exit code: ' . $return_code . ')',
+            'debug_cmd' => $command_line,
+            'debug_output' => substr($error_msg, 0, 1000)
+        ]);
+        exit;
+    }
+    
+    // Verify output file created successfully
+    if (!file_exists($output_file) || filesize($output_file) === 0) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Output file not created or empty',
+            'debug_path' => $output_file
+        ]);
+        exit;
+    }
+    
+    // SUCCESS RESPONSE
+    echo json_encode([
+        'success' => true,
+        'message' => 'Video processed successfully',
+        'input_file' => basename($input_file),
+        'output_file' => basename($output_file),
+        'output_size' => filesize($output_file),
+        'input_hash' => $file_hash,
+        'processing_time' => microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']
+    ]);
+    exit;
+}
 
 if ($cmd === 'upload') {
     // Check if operation is disabled
@@ -226,7 +442,6 @@ if ($cmd === 'upload') {
 
     // Fix for empty files
     if (($uploadFile['size'] ?? 0) === 0) {
-        error_log("BLOCKED EMPTY FILE: " . $uploadFile['name'] . " (0B)");
         http_response_code(400);
         echo json_encode(['error' => 'Empty files not allowed', 'code' => 400]);
         exit;
@@ -272,7 +487,7 @@ $response = $fm->execute($cmd, $_REQUEST);
     
     // Return JSON response
     echo json_encode($response);
-    
+    exit;
 } catch (Exception $e) {
     http_response_code($e->getCode() ?: 500);
     echo json_encode([
