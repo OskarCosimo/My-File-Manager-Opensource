@@ -26,16 +26,18 @@ jobs:
     - name: Check for dangerous functions
       run: |
         echo "Checking for potentially dangerous PHP functions..."
-        DANGEROUS_LINES=$(grep -rnE '\b(eval|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor 2>/dev/null | grep -v 'connector.php' || true)
-        if [ -n "$DANGEROUS_LINES" ]; then
-          echo "❌ Found dangerous function usage"
-          echo "$DANGEROUS_LINES"
+        grep -rnE '\b(eval|exec|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor > /dev/null 2>&1
+        grep_result=$?
+        filtered_result=$(grep -rnE '\b(eval|exec|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor 2>/dev/null | grep -v "ffmpeg\|video_process\|PATHTOFILES" || true)
+        if [ $grep_result -eq 0 ] && [ -n "$filtered_result" ]; then
+          echo "❌ Found dangerous function usage (excluding FFmpeg):"
+          echo "$filtered_result"
           exit 1
         fi
-        PASSTHRU_LINES=$(grep -rnE '\bpassthru\s*\(' src/ --exclude-dir=vendor 2>/dev/null | grep -v 'fpassthru' || true)
-        if [ -n "$PASSTHRU_LINES" ]; then
+        passthru_result=$(grep -rnE '\bpassthru\s*\(' src/ --exclude-dir=vendor 2>/dev/null | grep -v 'fpassthru' || true)
+        if [ -n "$passthru_result" ]; then
           echo "❌ Found passthru() usage (not fpassthru)"
-          echo "$PASSTHRU_LINES"
+          echo "$passthru_result"
           exit 1
         fi
         echo "✅ No dangerous functions found"
