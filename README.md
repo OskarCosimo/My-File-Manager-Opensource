@@ -161,6 +161,8 @@ my-file-manager-opensource/
 ├── js/
 │   ├── i18n.js                          # Internationalization translations
 │   ├── myfilemanager.js                 # Core file manager JavaScript
+│   ├── i18n.min.js                      # Internationalization translations - Minifed ready for production
+│   ├── myfilemanager.min.js             # Core file manager JavaScript - Minifed ready for production
 │   └── plugins/
 │       ├── myfilemanager-image-editor.js # Image editor plugin
 │       ├── myfilemanager-text-editor.js  # Text editor plugin
@@ -168,6 +170,7 @@ my-file-manager-opensource/
 │       └── [your-custom-plugins].js      # Your custom plugins
 ├── css/
 │   └── myfilemanager.css                # Core styles
+│   └── myfilemanager.min.css            # Core styles - Minifed ready for production
 ├── src/
 │   ├── connector.php                    # Main API endpoint
 │   ├── .htaccess                        # .htaccess for security with apache2 webserver (ready for production)
