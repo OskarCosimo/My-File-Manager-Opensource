@@ -168,15 +168,21 @@ try {
         ],
 
         'plugins' => [
-        'rate_limiter' => [], // this enable rate limiter for video editor
-        // 'ftpplugin' => [
+        'rate_limiter' => ['enabled' => false], // this enable rate limiter for video editor
+         'video_editor' => [
+        'enabled' => false,
+        'ffmpeg_path' => '/usr/bin/ffmpeg',  // Customizable!
+        //'blur_png_path' => '' //leave blank to use the default png in the video_editor.php
+    ],
+         'ftpplugin' => [
+             'enabled' => false
         //     'host' => 'ftp.example.com',
         //     'username' => 'user',
         //     'password' => 'pass',
         //     'port' => 21,
         //     'passive' => true
-        // ],
-         ],
+        ]
+        ],
         // Custom authentication callback
         'authCallback' => function() {
     // Implement your authentication logic here
@@ -249,187 +255,43 @@ if (!is_dir($config['trashPath'])) {
     // Get command from request
     $cmd = $_POST['cmd'] ?? $_GET['cmd'] ?? 'open';
     while (ob_get_level()) ob_end_clean();
+
 /**
- * Video Processing Endpoint with Rate Limiting (for video editing plugin)
- * Rate limit: 4 videos every 30 minutes per IP (customizable)
- * Supports trim, crop, resize, format conversion
- * **BASE64 DECODED hash
+ * Video Processing Endpoint (delegate to plugin)
  */
 if ($cmd === 'video_process') {
-
-// check if plugin is enabled before using it
+    // Check rate limiter
     if (!isset($config['plugins']['rate_limiter'])) {
         http_response_code(503);
-        echo json_encode(['success' => false, 'error' => 'Rate limiter plugin not available']);
+        echo json_encode(['success' => false, 'error' => 'Rate limiter not available']);
         exit;
     }
-
-    $rateCheck = $config['plugins']['rate_limiter']->checkVideoProcessLimit($_SERVER['REMOTE_ADDR']);
     
+    $rateCheck = $config['plugins']['rate_limiter']->checkVideoProcessLimit($_SERVER['REMOTE_ADDR']);
     if (!$rateCheck['success']) {
         http_response_code(429);
         echo json_encode($rateCheck);
         exit;
     }
     
+    // Check video processor plugin
+    if (!isset($config['plugins']['video_editor'])) {
+        http_response_code(503);
+        echo json_encode(['success' => false, 'error' => 'Video processor plugin not available']);
+        exit;
+    }
+    
+    // Delegate to plugin
     $file_hash = $_POST['target'] ?? '';
     $params_json = $_POST['params'] ?? '{}';
     $params = json_decode($params_json, true);
     
-    if (empty($file_hash)) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'error' => 'Missing target file hash']);
-        exit;
-    }
+    error_log("DEBUG: Video process params: " . json_encode($params));
     
-    $decoded_filename = base64_decode($file_hash);
+    $result = $config['plugins']['video_editor']->processVideo($file_hash, $params, $config['rootPath']);
     
-    $input_file = $config['rootPath'] . DIRECTORY_SEPARATOR . $decoded_filename;
-    
-    $input_file = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $input_file);
-    
-    if (!file_exists($input_file)) {
-        http_response_code(404);
-        echo json_encode([
-            'success' => false, 
-            'error' => 'Target file not found',
-            'debug_raw_hash' => $file_hash,
-            'debug_decoded' => $decoded_filename,
-            'debug_path' => $input_file
-        ]);
-        exit;
-    }
-    
-    if (!is_readable($input_file)) {
-        http_response_code(403);
-        echo json_encode([
-            'success' => false, 
-            'error' => 'File not readable (permissions error)'
-        ]);
-        exit;
-    }
-    
-    $input_file = realpath($input_file);
-    $root_realpath = realpath($config['rootPath']);
-    if (strpos($input_file, $root_realpath) !== 0) {
-        http_response_code(403);
-        echo json_encode(['success' => false, 'error' => 'Invalid file path (security check failed)']);
-        exit;
-    }
-    
-    $output_file = preg_replace('/\.[^.]+$/', '_edited.' . ($params['format'] ?? 'mp4'), $input_file);
-    
-    if (!empty($params['overwrite'])) {
-        $output_file = $input_file;
-    }
-    
-    $ffmpeg_cmd = ['ffmpeg', '-y'];
-    
-    if (!empty($params['trim_start']) && (float)$params['trim_start'] > 0) {
-        $ffmpeg_cmd[] = '-ss';
-        $ffmpeg_cmd[] = (float)$params['trim_start'];
-    }
-    
-    if (!empty($params['trim_end']) && (float)$params['trim_end'] > 0) {
-        $duration = (float)$params['trim_end'] - ((float)($params['trim_start'] ?? 0));
-        if ($duration > 0) {
-            $ffmpeg_cmd[] = '-t';
-            $ffmpeg_cmd[] = $duration;
-        }
-    }
-    
-    $ffmpeg_cmd[] = '-i';
-    $ffmpeg_cmd[] = escapeshellarg($input_file);
-    
-    $video_filters = [];
-    
-    if (!empty($params['crop_w']) && (int)$params['crop_w'] > 0 && 
-        !empty($params['crop_h']) && (int)$params['crop_h'] > 0) {
-        $video_filters[] = sprintf(
-            'crop=%d:%d:%d:%d',
-            (int)$params['crop_w'],
-            (int)$params['crop_h'],
-            max(0, (int)($params['crop_x'] ?? 0)),
-            max(0, (int)($params['crop_y'] ?? 0))
-        );
-    }
-    
-    if (!empty($params['resize_w']) && (int)$params['resize_w'] > 0) {
-        $resize_w = (int)$params['resize_w'] + ((int)$params['resize_w'] % 2);
-        $resize_h = (int)$params['resize_h'] + ((int)$params['resize_h'] % 2);
-        $video_filters[] = "scale={$resize_w}:{$resize_h}";
-    }
-    
-    if (!empty($video_filters)) {
-        $ffmpeg_cmd[] = '-vf';
-        $ffmpeg_cmd[] = implode(',', $video_filters);
-    }
-    
-    $output_format = $params['format'] ?? 'mp4';
-    
-    if ($output_format === 'mp4') {
-        $ffmpeg_cmd[] = '-c:v';
-        $ffmpeg_cmd[] = 'libx264';
-        $ffmpeg_cmd[] = '-preset';
-        $ffmpeg_cmd[] = 'fast';
-        $ffmpeg_cmd[] = '-crf';
-        $ffmpeg_cmd[] = '23';
-        $ffmpeg_cmd[] = '-c:a';
-        $ffmpeg_cmd[] = 'aac';
-        $ffmpeg_cmd[] = '-b:a';
-        $ffmpeg_cmd[] = '128k';
-        $ffmpeg_cmd[] = '-movflags';
-        $ffmpeg_cmd[] = '+faststart';
-    } else {
-        $ffmpeg_cmd[] = '-c:v';
-        $ffmpeg_cmd[] = 'libvpx-vp9';
-        $ffmpeg_cmd[] = '-crf';
-        $ffmpeg_cmd[] = '30';
-        $ffmpeg_cmd[] = '-b:v';
-        $ffmpeg_cmd[] = '0';
-        $ffmpeg_cmd[] = '-c:a';
-        $ffmpeg_cmd[] = 'libvorbis';
-    }
-    
-    $ffmpeg_cmd[] = escapeshellarg($output_file);
-    
-    $command_line = implode(' ', $ffmpeg_cmd);
-    
-    $output_lines = [];
-    $return_code = 0;
-    exec($command_line, $output_lines, $return_code);
-    
-    if ($return_code !== 0) {
-        $error_msg = implode("\n", $output_lines);
-        error_log("FFmpeg ERROR [{$return_code}] for {$input_file}: {$error_msg}");
-        
-        echo json_encode([
-            'success' => false,
-            'error' => 'FFmpeg processing failed (exit code: ' . $return_code . ')',
-            'debug_cmd' => $command_line,
-            'debug_output' => substr($error_msg, 0, 1000)
-        ]);
-        exit;
-    }
-    
-    if (!file_exists($output_file) || filesize($output_file) === 0) {
-        echo json_encode([
-            'success' => false,
-            'error' => 'Output file not created or empty',
-            'debug_path' => $output_file
-        ]);
-        exit;
-    }
-    
-    echo json_encode([
-        'success' => true,
-        'message' => 'Video processed successfully',
-        'input_file' => basename($input_file),
-        'output_file' => basename($output_file),
-        'output_size' => filesize($output_file),
-        'input_hash' => $file_hash,
-        'processing_time' => microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']
-    ]);
+    http_response_code($result['code'] ?? ($result['success'] ? 200 : 500));
+    echo json_encode($result);
     exit;
 }
 
