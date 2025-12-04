@@ -1,15 +1,41 @@
-name: Check for dangerous functions
-  run: |
-    echo "Checking for potentially dangerous PHP functions..."
-    DANGEROUS=$(grep -rnE '\b(eval|exec|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor | grep -v 'ffmpeg' | grep -v 'video_process' | grep -v 'PATHTOFILES')
-    if [ -n "$DANGEROUS" ]; then
-      echo "❌ Found dangerous function usage"
-      echo "$DANGEROUS"
-      exit 1
-    fi
-    if PASSTHRU=$(grep -rnE '\bpassthru\s*\(' src/ --exclude-dir=vendor | grep -v 'fpassthru'); [ -n "$PASSTHRU" ]; then
-      echo "❌ Found passthru() usage (not fpassthru)"
-      echo "$PASSTHRU"
-      exit 1
-    fi
-    echo "✅ No dangerous functions found"
+name: PHP Security Analysis
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  security:
+    name: PHP Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        coverage: none
+
+    - name: PHP Syntax Check
+      run: find src/ -name "*.php" -exec php -l {} \;
+
+    - name: Check for dangerous functions
+      run: |
+        echo "Checking for potentially dangerous PHP functions..."
+        DANGEROUS=$(grep -rnE '\b(eval|exec|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor | grep -v 'ffmpeg' | grep -v 'video_process' | grep -v 'PATHTOFILES')
+        if [ -n "$DANGEROUS" ]; then
+          echo "❌ Found dangerous function usage"
+          echo "$DANGEROUS"
+          exit 1
+        fi
+        PASSTHRU=$(grep -rnE '\bpassthru\s*\(' src/ --exclude-dir=vendor | grep -v 'fpassthru')
+        if [ -n "$PASSTHRU" ]; then
+          echo "❌ Found passthru() usage (not fpassthru)"
+          echo "$PASSTHRU"
+          exit 1
+        fi
+        echo "✅ No dangerous functions found"
