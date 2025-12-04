@@ -16,20 +16,6 @@ require_once __DIR__ . '/myfilemanager.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/chunkuploader.php';
 
-$plugins = [];
-// Auto-load plugins
-$plugin_dir = __DIR__ . '/plugins/';
-if (is_dir($plugin_dir)) {
-    foreach (glob($plugin_dir . '*.php') as $plugin_file) {
-        require_once $plugin_file;
-        $plugin_name = basename($plugin_file, '.php');
-        $class_name = $plugin_name . 'Plugin';
-        if (class_exists($class_name)) {
-            $plugins[$plugin_name] = new $class_name($config);
-        }
-    }
-}
-
 // Start session for token management
 session_start();
 
@@ -180,7 +166,17 @@ try {
             'enableIPWhitelist' => false,
             'allowedIPs' => [],
         ],
-        
+
+        'plugins' => [
+        'rate_limiter' => [], // this enable rate limiter for video editor
+        // 'ftpplugin' => [
+        //     'host' => 'ftp.example.com',
+        //     'username' => 'user',
+        //     'password' => 'pass',
+        //     'port' => 21,
+        //     'passive' => true
+        // ],
+         ],
         // Custom authentication callback
         'authCallback' => function() {
     // Implement your authentication logic here
@@ -191,13 +187,30 @@ try {
         'quota' => '524288000', // in bytes
         'permissions' => ['read', 'write', 'delete', 'upload', 'download', 'rename', 'copy', 'move', 'mkdir', 'search', 'quota', 'info']
     ];
-},
-        
-        // Plugins configuration
-        'plugins' => [
-            'rate_limiter' => $plugins // dynamic
-        ]
+}
     ];
+
+$plugins = [];
+$plugin_dir = __DIR__ . '/plugins/';
+if (is_dir($plugin_dir)) {
+    foreach (glob($plugin_dir . '*.php') as $plugin_file) {
+        require_once $plugin_file;
+        $plugin_name = basename($plugin_file, '.php');
+        $class_name = $plugin_name . 'Plugin';
+        
+        // load only if the plugin is configured in config
+        if (isset($config['plugins'][$plugin_name]) && class_exists($class_name)) {
+            try {
+                $plugins[$plugin_name] = new $class_name($config);
+                error_log("Loaded configured plugin: {$plugin_name}");
+            } catch (Exception $e) {
+                error_log("Failed to load plugin {$plugin_name}: " . $e->getMessage());
+            }
+        }
+    }
+}
+
+$config['plugins'] = $plugins;
     
     // Validate authentication
     $user = call_user_func($config['authCallback']);
