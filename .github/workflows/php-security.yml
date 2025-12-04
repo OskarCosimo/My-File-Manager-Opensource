@@ -26,16 +26,16 @@ jobs:
     - name: Check for dangerous functions
       run: |
         echo "Checking for potentially dangerous PHP functions..."
-        if ! grep -rnE '\b(eval|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor --exclude=connector.php 2>/dev/null; then
-          echo "✅ No dangerous functions found"
-        else
+        DANGEROUS=$(grep -rnE '\b(eval|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor --exclude=connector.php 2>/dev/null || true)
+        if [ -n "$DANGEROUS" ]; then
           echo "❌ Found dangerous function usage"
-          grep -rnE '\b(eval|system|shell_exec|proc_open|popen)\s*\(' src/ --exclude-dir=vendor --exclude=connector.php 2>/dev/null
+          echo "$DANGEROUS"
           exit 1
         fi
-        if grep -rnE '\bpassthru\s*\(' src/ --exclude-dir=vendor 2>/dev/null | grep -v 'fpassthru'; then
+        PASSTHRU=$(grep -rnE '\bpassthru\s*\(' src/ --exclude-dir=vendor --exclude=connector.php 2>/dev/null | grep -v 'fpassthru' || true)
+        if [ -n "$PASSTHRU" ]; then
           echo "❌ Found passthru() usage (not fpassthru)"
-          grep -rnE '\bpassthru\s*\(' src/ --exclude-dir=vendor 2>/dev/null | grep -v 'fpassthru'
+          echo "$PASSTHRU"
           exit 1
         fi
-        echo "✅ Security check passed!"
+        echo "✅ No dangerous functions found"
