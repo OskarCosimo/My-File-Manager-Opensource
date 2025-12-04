@@ -164,6 +164,7 @@ my-file-manager-opensource/
 │   └── plugins/
 │       ├── myfilemanager-image-editor.js # Image editor plugin
 │       ├── myfilemanager-text-editor.js  # Text editor plugin
+│       ├── myfilemanager-video-editor.js  # Text editor plugin
 │       └── [your-custom-plugins].js      # Your custom plugins
 ├── css/
 │   └── myfilemanager.css                # Core styles
@@ -176,10 +177,11 @@ my-file-manager-opensource/
 │   ├── security.php                     # Security utilities
 │   └── plugins/
 │       ├── plugininterface.php          # Plugin interface
-│       ├── ftpplugin.php                # FTP plugin example
+│       ├── ftpplugin.php                # FTP plugin
+│       ├── rate_limiter.php             # Rate limit for video editor plugin
+│       ├── video_editor.php             # Video editor plugin
 │       └── [your-custom-plugins].php    # Your custom plugins
-├── assets/
-│   └── icons/                           # PNG icon files
+├── assets/                              # PNG icon files and other static assets
 ├── files/                               # Default file storage directory
 ├── package.json                         # NPM package info (optional)
 └── README.md                            # This file
