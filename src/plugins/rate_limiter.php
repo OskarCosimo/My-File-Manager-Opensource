@@ -3,17 +3,37 @@
  * Rate Limiter Plugin for MyFileManager
  * Limits video processing to 4 videos/30min per IP
  */
-class RateLimiterPlugin {
+class rate_limiterPlugin {
     private $config;
+    private $enabled;
     
     public function __construct($config) {
         $this->config = $config;
+        $this->enabled = $config['enabled'] ?? true;
+        
+        // ✅ Skip init if disabled
+        if (!$this->enabled) {
+            error_log("⏸️ Rate limiter plugin disabled");
+        }
+    }
+    
+    /**
+     * Check if plugin is enabled
+     */
+    public function isEnabled() {
+        return $this->enabled;
     }
     
     /**
      * Check video process rate limit
      */
     public function checkVideoProcessLimit($client_ip) {
+        // ✅ Return success if disabled (no rate limiting)
+        if (!$this->enabled) {
+            error_log("ℹ️ Rate limiter disabled - allowing request");
+            return ['success' => true];
+        }
+        
         $rate_limit_key = "video_process_rate_{$client_ip}";
         $max_requests = 4; // number of times
         $window = 1800; // 30min
@@ -32,6 +52,8 @@ class RateLimiterPlugin {
     }
     
     private function get_cache($key, $default = null) {
+        if (!$this->enabled) return $default;
+        
         if (function_exists('apcu_fetch')) {
             return apcu_fetch($key, $success) ?: $default;
         }
@@ -45,6 +67,8 @@ class RateLimiterPlugin {
     }
     
     private function set_cache($key, $value, $ttl = 1800) {
+        if (!$this->enabled) return;
+        
         if (function_exists('apcu_store')) {
             apcu_store($key, $value, $ttl);
             return;
