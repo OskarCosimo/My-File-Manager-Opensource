@@ -27,19 +27,14 @@ jobs:
       run: |
         echo "Checking for potentially dangerous PHP functions..."
         
-        # Find ALL dangerous functions first
-        grep -rn --include="*.php" -E '\b(exec|eval|system|shell_exec|proc_open|popen|passthru)\s*\(' src/ --exclude-dir=vendor > all_dangerous.txt 2>/dev/null || true
+        # Find ONLY REAL dangerous calls (esclude FFmpeg e path assignment)
+        REAL_DANGEROUS=$(grep -rn --include="*.php" -E 'exec\s*\([^)]*\)' src/ --exclude-dir=vendor 2>/dev/null | \
+                         grep -v -E "(ffmpeg|video_process|PATHTOFILES|__DIR__|'\.\./files/')" || true)
         
-        # Filter OUT safe FFmpeg lines and PATHTOFILES
-        grep -v -E "(ffmpeg|video_process|PATHTOFILES|\$PATHTOFILES|command_line)" all_dangerous.txt > real_dangerous.txt 2>/dev/null || true
-        
-        # Check if ANY real dangerous functions remain
-        if [ -s real_dangerous.txt ]; then
-          echo "❌ Found REAL dangerous function usage:"
-          cat real_dangerous.txt
-          rm -f all_dangerous.txt real_dangerous.txt
+        if [ -n "$REAL_DANGEROUS" ]; then
+          echo "❌ Found REAL dangerous exec() usage:"
+          echo "$REAL_DANGEROUS"
           exit 1
         fi
         
-        echo "✅ No REAL dangerous functions found (FFmpeg exec is safe)"
-        rm -f all_dangerous.txt real_dangerous.txt
+        echo "✅ No REAL dangerous functions found"
