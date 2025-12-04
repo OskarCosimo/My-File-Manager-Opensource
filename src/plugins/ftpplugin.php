@@ -11,7 +11,7 @@
 
 require_once __DIR__ . '/plugininterface.php';
 
-class FTPPlugin implements PluginInterface {
+class ftppluginPlugin implements PluginInterface {
     private $config;
     private $connection;
     
