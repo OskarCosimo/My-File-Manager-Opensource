@@ -1,6 +1,6 @@
 {
   "name": "my-file-manager-opensource",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Modern, secure web-based file manager with end-to-end encryption",
   "main": "js/myfilemanager.js",
   "scripts": {
