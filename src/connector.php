@@ -198,14 +198,19 @@ if (is_dir($plugin_dir)) {
         $plugin_name = basename($plugin_file, '.php');
         $class_name = $plugin_name . 'Plugin';
         
-        // load only if the plugin is configured in config
-        if (isset($config['plugins'][$plugin_name]) && class_exists($class_name)) {
+        // check if plugin is enabled
+        if (isset($config['plugins'][$plugin_name]) && 
+            $config['plugins'][$plugin_name]['enabled'] ?? false &&
+            class_exists($class_name)) {
+            
             try {
                 $plugins[$plugin_name] = new $class_name($config);
-                error_log("Loaded configured plugin: {$plugin_name}");
+                //error_log("Loaded enabled plugin: {$plugin_name}");
             } catch (Exception $e) {
                 error_log("Failed to load plugin {$plugin_name}: " . $e->getMessage());
             }
+        } else {
+            error_log("Skipped plugin {$plugin_name}: disabled or not configured");
         }
     }
 }
@@ -251,6 +256,14 @@ if (!is_dir($config['trashPath'])) {
  * **BASE64 DECODED hash
  */
 if ($cmd === 'video_process') {
+
+// check if plugin is enabled before using it
+    if (!isset($config['plugins']['rate_limiter'])) {
+        http_response_code(503);
+        echo json_encode(['success' => false, 'error' => 'Rate limiter plugin not available']);
+        exit;
+    }
+
     $rateCheck = $config['plugins']['rate_limiter']->checkVideoProcessLimit($_SERVER['REMOTE_ADDR']);
     
     if (!$rateCheck['success']) {
