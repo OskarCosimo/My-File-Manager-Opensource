@@ -13,7 +13,7 @@
 
 **A modern, secure, and feature-rich file manager with end-to-end encryption support**
 
-[Features](#features) • [Installation](#installation) • [Documentation](#documentation) • [npm download](https://www.npmjs.com/package/my-file-manager-opensource) • [License](#license)
+[Features](#features) • [Installation](#installation) • [Documentation](#documentation) • [NPM Download](https://www.npmjs.com/package/my-file-manager-opensource) • [License](#license)
 
 </div>
 
