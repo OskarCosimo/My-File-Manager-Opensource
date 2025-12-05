@@ -235,7 +235,7 @@ require_once 'security.php';
 
 // Your configuration
 $FOLDERPATH = __DIR__ . '/../files/';  // Absolute path to file storage
-$URLPATH = '/files/';                   // URL path for file access
+$URLPATH = 'https://contentdelivery.example.com/file.php';  // URL path for file access (?filename will be automatically added to the querystring), leave it blank to use the default value
 $TOTALBYTESFORMYCLOUD = '5GB';          // User quota
 $MAXFILESIZEALLOWED = '500MB';          // Max file size
 
@@ -277,9 +277,10 @@ Create an HTML file with the file manager:
     <script src="js/i18n.js"></script>
     <script src="js/myfilemanager.js"></script>
 
-    <!-- Load Plugins (Optional) -->
+    <!-- Load Javascript Plugins (Optional) -->
     <script src="js/plugins/myfilemanager-text-editor.js"></script>
     <script src="js/plugins/myfilemanager-image-editor.js"></script>
+    <script src="js/plugins/myfilemanager-video-editor.js"></script>
 
     <!-- Initialize File Manager -->
     <script>
