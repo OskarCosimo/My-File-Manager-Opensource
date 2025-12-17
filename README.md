@@ -350,6 +350,7 @@ The following table lists all available options when initializing the file manag
 | `sortBy` | String | `name` | Default sort field (`name`, `size`, `date`, `type`) |
 | `sortOrder` | String | `asc` | Default sort order (`asc` or `desc`) |
 | `autoRefresh` | Boolean/Number | `false` | Auto-refresh interval in seconds (e.g., `30`) |
+| `hideExtensions` | Array | `[]` | File extensions hided from the view |
 | `banExtensions` | Array | See below | File extensions blocked for upload/rename (see below) |
 | `features` | Object | All enabled | Enable/disable specific features (read below) |
 | `customMenus` | Array | `[]` | Custom menu items in menu bar |
