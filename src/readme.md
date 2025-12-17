@@ -1,4 +1,4 @@
-# MyFileManager - Configuration Guide
+# MyFileManager - PHP Configuration Guide
 
 This guide focuses on configuring the `connector.php` file, which is the main entry point for all file operations in MyFileManager.
 
