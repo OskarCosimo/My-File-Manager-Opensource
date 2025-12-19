@@ -281,6 +281,8 @@ window.MyFileManagerCrypto = {
         this.encryptFileData = window.MyFileManagerCrypto.encryptFileData;
         this.decryptFileData = window.MyFileManagerCrypto.decryptFileData;
 
+        this.wakeLock = null;
+
         // Internal state
         this.state = {
             currentPath: '',
@@ -296,6 +298,16 @@ window.MyFileManagerCrypto = {
         };
 
         this._letterNavState = { lastLetter: null, index: -1 };
+
+        // Upload stats
+        this.uploadStats = {
+            startTime: 0,
+            totalBytes: 0,
+            uploadedBytes: 0,
+            speedSamples: [],
+            avgSpeed: 0,
+            maxSamples: 10
+        };
 
         // Load translations
         this.i18n = window.MyFileManagerI18n[this.options.lang] || window.MyFileManagerI18n['en'];
@@ -341,7 +353,15 @@ window.MyFileManagerCrypto = {
         this.state.history = [];
         this.state.historyIndex = -1;
 
+        this.requestWakeLock(); // Keep screen on during initial load
         this.open('');
+
+        // Add visibility change listener
+        var self = this;
+        document.addEventListener('visibilitychange', function () {
+            self.handleVisibilityChange();
+        });
+
         this.trigger('onInit');
 
         // Initialize plugins
@@ -575,6 +595,40 @@ window.MyFileManagerCrypto = {
                     break;
             }
         });
+    };
+
+    // Request wake lock to prevent screen sleep
+    MyFileManager.prototype.requestWakeLock = async function () {
+        if ('wakeLock' in navigator) {
+            try {
+                this.wakeLock = await navigator.wakeLock.request('screen');
+                this._debug('log', 'Wake lock acquired');
+
+                // Re-acquire wake lock when page becomes visible again
+                this.wakeLock.addEventListener('release', () => {
+                    this._debug('log', 'Wake lock released');
+                });
+            } catch (err) {
+                this._debug('warn', `Wake lock failed: ${err.name}, ${err.message}`);
+            }
+        }
+    };
+
+    // Release wake lock
+    MyFileManager.prototype.releaseWakeLock = function () {
+        if (this.wakeLock !== null) {
+            this.wakeLock.release()
+                .then(() => {
+                    this.wakeLock = null;
+                });
+        }
+    };
+
+    // Handle visibility change to reacquire lock
+    MyFileManager.prototype.handleVisibilityChange = async function () {
+        if (this.wakeLock !== null && document.visibilityState === 'visible') {
+            await this.requestWakeLock();
+        }
     };
 
     /**
@@ -1625,22 +1679,28 @@ window.MyFileManagerCrypto = {
     */
     MyFileManager.prototype.renderFiles = function () {
         var self = this;
-        var container = this.container.querySelector('.mfm-content');
+        var files = this.sortFiles(this.state.files);
 
         // Filter hidden extensions
-        files = files.filter(function (file) {
-            if (file.mime === 'directory') return true; // Always show directories
+        if (self.options.hideExtensions && self.options.hideExtensions.length > 0) {
+            files = files.filter(function (file) {
+                // Always show directories
+                if (file.mime === 'directory') return true;
 
-            var fileName = file.name.toLowerCase();
-            for (var i = 0; i < self.options.hideExtensions.length; i++) {
-                var ext = self.options.hideExtensions[i].toLowerCase();
-                if (fileName.endsWith(ext)) {
-                    return false; // Hide this file
+                // Check if file extension should be hidden
+                var fileName = file.name.toLowerCase();
+                for (var i = 0; i < self.options.hideExtensions.length; i++) {
+                    var ext = self.options.hideExtensions[i].toLowerCase();
+                    // Ensure extension starts with dot
+                    if (!ext.startsWith('.')) ext = '.' + ext;
+                    if (fileName.endsWith(ext)) {
+                        return false; // Hide this file
+                    }
                 }
-            }
-            return true;
-        });
-        var files = this.sortFiles(this.state.files);
+                return true; // Show this file
+            });
+        }
+
         var html = '';
 
         if (files.length === 0) {
@@ -2127,7 +2187,7 @@ window.MyFileManagerCrypto = {
                 }
 
                 if (!handled) {
-                    this.debug('warn', 'Unknown context menu action:', action);
+                    this._debug('warn', 'Unknown context menu action:', action);
                 }
                 break;
         }
@@ -2833,6 +2893,16 @@ window.MyFileManagerCrypto = {
     MyFileManager.prototype.uploadFile = async function (file) {
         var self = this;
 
+        // RESET upload stats for new upload
+        this.uploadStats = {
+            startTime: 0,
+            totalBytes: 0,
+            uploadedBytes: 0,
+            speedSamples: [],
+            avgSpeed: 0,
+            maxSamples: 10  // Adjust for smoother/faster response (5-15 optimal)
+        };
+
         // Find extension from right (last dot) - DO NOT MODIFY extension!
         const lastDotIndex = file.name.lastIndexOf('.');
         let fileName = file.name;
@@ -2888,6 +2958,7 @@ window.MyFileManagerCrypto = {
         // Show upload progress modal and trigger start event (use sanitized)
         this.showUploadProgress(sanitizedFile.name);
         this.trigger('onUploadStart', { file: sanitizedFile });
+        await this.requestWakeLock(); // Keep screen on during upload
         self.currentUploadXHR = null;
 
         try {
@@ -2946,26 +3017,61 @@ window.MyFileManagerCrypto = {
                 const xhr = new XMLHttpRequest();
                 self.currentUploadXHR = xhr;
 
-                // Track upload progress with speed calculation
+                // Track upload progress with SMOOTHED speed calculation
                 xhr.upload.addEventListener('progress', function (e) {
                     if (e.lengthComputable) {
                         const totalLoaded = (currentChunk * chunkSize) + e.loaded;
                         const percent = Math.min(100, Math.round((totalLoaded / uploadFile.size) * 100));
-                        const now = new Date().getTime();
-                        const deltaTime = (now - lastTime) / 1000;
-                        const deltaLoaded = totalLoaded - lastLoaded;
-                        let speed = 0;
-                        let timeRemaining = Infinity;
 
-                        if (deltaTime > 0) {
-                            speed = deltaLoaded / deltaTime;
-                            const remainingBytes = uploadFile.size - totalLoaded;
-                            timeRemaining = remainingBytes / speed;
+                        const now = new Date().getTime();
+
+                        // Initialize start time on first progress event
+                        if (self.uploadStats.startTime === 0) {
+                            self.uploadStats.startTime = now;
+                            self.uploadStats.uploadedBytes = 0;
+                            self.uploadStats.speedSamples = [];
+                            self.uploadStats.avgSpeed = 0;
                         }
 
+                        const deltaTime = (now - lastTime) / 1000; // seconds
+                        const deltaLoaded = totalLoaded - lastLoaded;
+
+                        // Calculate instantaneous speed
+                        let instantSpeed = 0;
+                        if (deltaTime > 0 && deltaLoaded > 0) {
+                            instantSpeed = deltaLoaded / deltaTime; // bytes/sec
+                        }
+
+                        // Add to speed samples array (only if speed is valid)
+                        if (instantSpeed > 0) {
+                            self.uploadStats.speedSamples.push(instantSpeed);
+
+                            // Keep only last N samples for moving average
+                            if (self.uploadStats.speedSamples.length > self.uploadStats.maxSamples) {
+                                self.uploadStats.speedSamples.shift(); // Remove oldest
+                            }
+                        }
+
+                        // Calculate average speed from samples
+                        let avgSpeed = 0;
+                        if (self.uploadStats.speedSamples.length > 0) {
+                            const sum = self.uploadStats.speedSamples.reduce((a, b) => a + b, 0);
+                            avgSpeed = sum / self.uploadStats.speedSamples.length;
+                        }
+
+                        // Use average speed for time calculation
+                        let timeRemaining = Infinity;
+                        if (avgSpeed > 0) {
+                            const remainingBytes = uploadFile.size - totalLoaded;
+                            timeRemaining = remainingBytes / avgSpeed; // seconds
+                        }
+
+                        // Update tracking variables
                         lastTime = now;
                         lastLoaded = totalLoaded;
-                        self.updateUploadProgress(percent, speed, timeRemaining);
+
+                        // Update UI with AVERAGED speed and time
+                        self.updateUploadProgress(percent, avgSpeed, timeRemaining);
                     }
                 });
 
@@ -3040,6 +3146,7 @@ window.MyFileManagerCrypto = {
             self.showUploadError('Upload failed: ' + error);
             self.trigger('onUploadError', { file: sanitizedFile, error: error });
         } finally {
+            self.releaseWakeLock(); // Release when done (success or error)
             // Always cleanup XHR reference
             self.currentUploadXHR = null;
         }
@@ -3080,13 +3187,45 @@ window.MyFileManagerCrypto = {
     MyFileManager.prototype.showUploadProgress = function (filename) {
         var modal = this.elements.uploadModal;
         var filenameEl = modal.querySelector('.mfm-upload-filename');
+        var statusDiv = modal.querySelector('.mfm-upload-status');
+        var progressContainer = modal.querySelector('.mfm-progress-container');
+        var actionsDiv = modal.querySelector('.mfm-upload-actions');
 
         if (filenameEl) {
             filenameEl.textContent = filename;
         }
+
+        // RESET: Hide status messages and actions from previous upload
+        if (statusDiv) {
+            statusDiv.style.display = 'none';
+            statusDiv.style.color = '';
+            statusDiv.style.padding = '';
+            statusDiv.style.background = '';
+            statusDiv.style.borderRadius = '';
+            var statusMsg = modal.querySelector('.mfm-upload-status-message');
+            if (statusMsg) {
+                statusMsg.innerHTML = '';
+            }
+        }
+
+        if (actionsDiv) {
+            actionsDiv.style.display = 'none';
+        }
+
+        // RESET: Show and reset progress bar
+        if (progressContainer) {
+            progressContainer.style.display = 'block';
+        }
+
+        // Reset title to "Uploading Files"
+        var title = modal.querySelector('.mfm-upload-modal-title');
+        if (title) {
+            title.textContent = 'Uploading File';
+        }
+
         modal.style.display = 'flex';
 
-        // Reset progress
+        // Reset progress to 0
         this.updateUploadProgress(0, 0, 0);
     };
 
@@ -3130,6 +3269,31 @@ window.MyFileManagerCrypto = {
     * Hide upload progress modal
     */
     MyFileManager.prototype.hideUploadProgress = function () {
+        var modal = this.elements.uploadModal;
+
+        // Reset all modal state
+        var statusDiv = modal.querySelector('.mfm-upload-status');
+        if (statusDiv) {
+            statusDiv.style.display = 'none';
+            var statusMsg = modal.querySelector('.mfm-upload-status-message');
+            if (statusMsg) {
+                statusMsg.innerHTML = '';
+            }
+        }
+
+        var actionsDiv = modal.querySelector('.mfm-upload-actions');
+        if (actionsDiv) {
+            actionsDiv.style.display = 'none';
+        }
+
+        var progressContainer = modal.querySelector('.mfm-progress-container');
+        if (progressContainer) {
+            progressContainer.style.display = 'block';
+        }
+
+        // Reset progress bar
+        this.updateUploadProgress(0, 0, 0);
+
         this.elements.uploadModal.style.display = 'none';
         this.currentUploadXHR = null;
     };
