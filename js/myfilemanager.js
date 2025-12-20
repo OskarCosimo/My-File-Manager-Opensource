@@ -523,6 +523,69 @@ window.MyFileManagerCrypto = {
         </div>
     `;
 
+        // Download Progress Modal
+        var downloadModal = document.createElement('div');
+        downloadModal.className = 'mfm-download-modal';
+        downloadModal.style.display = 'none';
+        downloadModal.innerHTML = `
+    <div class="mfm-download-modal-content">
+        <div class="mfm-download-modal-header">
+            <h3 class="mfm-download-modal-title">Downloading File</h3>
+            <button class="mfm-download-modal-close">&times;</button>
+        </div>
+        <div class="mfm-download-modal-body">
+            <div class="mfm-download-info">
+                <div class="mfm-download-filename"></div>
+                <div class="mfm-download-filesize"></div>
+            </div>
+            <!-- Progress Bar -->
+            <div class="mfm-progress-container">
+                <div class="mfm-progress-bar">
+                    <div class="mfm-progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="mfm-progress-text">0%</div>
+            </div>
+            <!-- Download Stats -->
+            <div class="mfm-download-stats">
+                <span class="mfm-download-speed">0 MB/s</span>
+                <span class="mfm-download-time">Calculating...</span>
+            </div>
+            <!-- Status Message -->
+            <div class="mfm-download-status" style="margin-top: 15px; display: none;">
+                <div class="mfm-download-status-message"></div>
+            </div>
+            <!-- Actions -->
+            <div class="mfm-download-actions" style="margin-top: 15px; text-align: right; display: none;">
+                <button class="mfm-btn mfm-download-close-btn">Close</button>
+            </div>
+        </div>
+    </div>
+`;
+
+        // Bind close buttons
+        var downloadCloseBtn = downloadModal.querySelector('.mfm-download-modal-close');
+        var downloadCloseBtnAction = downloadModal.querySelector('.mfm-download-close-btn');
+
+        var self = this;
+        if (downloadCloseBtn) {
+            downloadCloseBtn.addEventListener('click', function () {
+                if (self.currentDownloadController) {
+                    if (confirm('Download in progress. Cancel download?')) {
+                        self.cancelDownload();
+                        self.hideDownloadProgress();
+                    }
+                } else {
+                    self.hideDownloadProgress();
+                }
+            });
+        }
+
+        if (downloadCloseBtnAction) {
+            downloadCloseBtnAction.addEventListener('click', function () {
+                self.hideDownloadProgress();
+            });
+        }
+
         // Append elements
         this.container.appendChild(menubar);
         this.container.appendChild(toolbar);
@@ -534,6 +597,7 @@ window.MyFileManagerCrypto = {
         this.container.appendChild(uploadInput);
         this.container.appendChild(modal);
         this.container.appendChild(uploadModal);
+        this.container.appendChild(downloadModal);
 
         // Store references
         this.elements = {
@@ -546,6 +610,7 @@ window.MyFileManagerCrypto = {
             uploadInput: uploadInput,
             modal: modal,
             uploadModal: uploadModal,
+            downloadModal: downloadModal,
             filesContainer: content.querySelector('.mfm-files'),
             breadcrumb: addressbar.querySelector('.mfm-breadcrumb'),
             search: toolbar.querySelector('.mfm-search'),
@@ -1557,12 +1622,11 @@ window.MyFileManagerCrypto = {
     };
 
     /**
-    * Download single file with optional decryption
-    */
+     * Download single file with streaming and progress tracking
+     */
     MyFileManager.prototype.downloadFile = async function (file) {
         var self = this;
-
-        self._debug('log', 'downloadFile START for:', file.name);
+        self._debug('log', 'downloadFile START for', file.name);
 
         try {
             // Skip folders
@@ -1571,88 +1635,154 @@ window.MyFileManagerCrypto = {
                 return;
             }
 
-            // CLEAN URL: Remove everything after first ?
+            // Show progress modal immediately
+            this.showDownloadProgress(file.name, file.size);
+
+            // Create AbortController for cancellation
+            this.currentDownloadController = new AbortController();
+
+            // Get base URL
             var downloadUrl = this.options.downloadUrl || this.options.url;
-            self._debug('log', 'Original URL:', downloadUrl);
-
             var baseUrl = downloadUrl.split('?')[0];
-            self._debug('log', 'Base URL:', baseUrl);
 
-            // Extract existing params EXCEPT token2
-            var existingParams = [];
+            // Extract tokens
+            var token1 = '';
+            var token2 = Date.now();
+
             if (downloadUrl.indexOf('?') !== -1) {
                 var queryString = downloadUrl.split('?')[1];
                 var pairs = queryString.split('&');
-
                 for (var i = 0; i < pairs.length; i++) {
                     var pair = pairs[i].split('=');
-                    var key = pair[0];
-                    var value = pair[1];
-
-                    // Keep token1, but regenerate token2 as timestamp
-                    if (key === 'token1') {
-                        existingParams.push('token1=' + value);
-                    } else if (key === 'token2') {
-                        // Regenerate clean token2
-                        existingParams.push('token2=' + Date.now());
+                    if (pair[0] === 'token1') {
+                        token1 = decodeURIComponent(pair[1]);
                     }
                 }
             }
 
-            // Build new params
-            var newParams = [];
-            newParams.push('cmd=download');
-            newParams.push('target=' + encodeURIComponent(file.hash));
+            // Build FormData
+            const formData = new FormData();
+            formData.append('cmd', 'download');
+            formData.append('target', file.hash);
 
             if (this.options.token) {
-                newParams.push('token=' + encodeURIComponent(this.options.token));
+                formData.append('token', this.options.token);
             }
+            if (token1) {
+                formData.append('token1', token1);
+            }
+            formData.append('token2', token2.toString());
 
-            // Combine all params
-            var allParams = existingParams.concat(newParams);
-            var url = baseUrl + '?' + allParams.join('&');
+            self._debug('log', 'Starting download with streaming...');
 
-            self._debug('log', 'Final download URL:', url);
-
-            const response = await fetch(url, {
-                method: 'GET',
+            const response = await fetch(baseUrl, {
+                method: 'POST',
                 credentials: 'same-origin',
                 headers: {
                     'Authorization': 'Bearer ' + this.options.token
-                }
+                },
+                body: formData,
+                signal: this.currentDownloadController.signal
             });
-
-            self._debug('log', 'Response status:', response.status);
 
             if (!response.ok) {
                 throw new Error('HTTP ' + response.status);
             }
 
-            const arrayBuffer = await response.arrayBuffer();
-            const encryptedData = new Uint8Array(arrayBuffer);
+            // Use file.size from JavaScript (already known!)
+            const total = file.size || 0;
 
-            let finalBlob;
-            let finalFilename = file.name;
+            self._debug('log', 'File size from metadata:', total, 'bytes');
 
-            // DECRYPT if cryptFiles is enabled, key exists, AND file is encrypted
-            if (this.options.cryptFiles && this.options.encryptionKey && file.name.endsWith('.encrypted')) {
-                self._debug('log', '🔐 Decrypting file...');
+            // Stream the response with progress tracking
+            const reader = response.body.getReader();
+            const chunks = [];
+            let receivedLength = 0;
+            let lastTime = Date.now();
+            let lastReceived = 0;
 
-                const decryptedData = await this.decryptFileData(encryptedData, this.options.encryptionKey);
+            // Speed tracking with moving average
+            const speedSamples = [];
+            const maxSamples = 10;
 
-                // Remove .encrypted extension for original filename
-                finalFilename = file.name.replace('.encrypted', '');
-                finalBlob = new Blob([decryptedData], { type: file.mime || 'application/octet-stream' });
+            while (true) {
+                const { done, value } = await reader.read();
 
-                self._debug('log', 'Decrypted file:', finalFilename);
-            } else {
-                // No decryption needed
-                finalBlob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+                if (done) break;
+
+                chunks.push(value);
+                receivedLength += value.length;
+
+                // Calculate progress using file.size
+                const percent = total > 0 ? (receivedLength / total) * 100 : 0;
+
+                // Calculate speed with moving average
+                const now = Date.now();
+                const deltaTime = (now - lastTime) / 1000;
+                const deltaReceived = receivedLength - lastReceived;
+
+                if (deltaTime > 0.1) { // Update every 100ms
+                    const instantSpeed = deltaReceived / deltaTime;
+
+                    if (instantSpeed > 0) {
+                        speedSamples.push(instantSpeed);
+                        if (speedSamples.length > maxSamples) {
+                            speedSamples.shift();
+                        }
+                    }
+
+                    // Calculate average speed
+                    let avgSpeed = 0;
+                    if (speedSamples.length > 0) {
+                        const sum = speedSamples.reduce((a, b) => a + b, 0);
+                        avgSpeed = sum / speedSamples.length;
+                    }
+
+                    // Calculate time remaining using file.size
+                    let timeRemaining = Infinity;
+                    if (avgSpeed > 0 && total > 0) {
+                        const remaining = total - receivedLength;
+                        timeRemaining = remaining / avgSpeed;
+                    }
+
+                    // Update UI
+                    self.updateDownloadProgress(percent, avgSpeed, timeRemaining);
+
+                    lastTime = now;
+                    lastReceived = receivedLength;
+                }
             }
 
-            self._debug('log', 'Blob size:', finalBlob.size);
+            self._debug('log', 'Download complete, received:', receivedLength, 'bytes');
 
-            // Create download link
+            // Force final update to 100% (for small files)
+            if (total > 0) {
+                // Calculate final average speed for small files
+                let finalSpeed = 0;
+                if (speedSamples.length > 0) {
+                    const sum = speedSamples.reduce((a, b) => a + b, 0);
+                    finalSpeed = sum / speedSamples.length;
+                }
+                self.updateDownloadProgress(100, finalSpeed, 0);
+            }
+
+            // Combine chunks into blob
+            const blob = new Blob(chunks, { type: 'application/octet-stream' });
+
+            // Handle decryption if needed
+            let finalBlob = blob;
+            let finalFilename = file.name;
+
+            if (this.options.cryptFiles && this.options.encryptionKey && file.name.endsWith('.encrypted')) {
+                self._debug('log', 'Decrypting file...');
+                const arrayBuffer = await blob.arrayBuffer();
+                const encryptedData = new Uint8Array(arrayBuffer);
+                const decryptedData = await this.decryptFileData(encryptedData, this.options.encryptionKey);
+                finalBlob = new Blob([decryptedData], { type: file.mime || 'application/octet-stream' });
+                finalFilename = file.name.replace('.encrypted', '');
+            }
+
+            // Trigger browser download
             const a = document.createElement('a');
             a.href = URL.createObjectURL(finalBlob);
             a.download = finalFilename;
@@ -1661,15 +1791,22 @@ window.MyFileManagerCrypto = {
             document.body.removeChild(a);
             URL.revokeObjectURL(a.href);
 
-            self._debug('log', 'Download complete:', finalFilename);
+            // Wait a bit longer for small files so user sees 100%
+            setTimeout(function () {
+                self.hideDownloadProgress();
+            }, 1500);
+
+            self._debug('log', 'Download saved:', finalFilename);
 
         } catch (error) {
             self._debug('error', 'Download failed:', error);
 
-            if (error.name === 'OperationError' || error.message.includes('decryption')) {
-                alert('Decryption failed. Wrong password or corrupted file.');
+            if (error.name === 'AbortError') {
+                self.showDownloadError('Download cancelled by user');
+            } else if (error.name === 'OperationError' || error.message.includes('decryption')) {
+                self.showDownloadError('Decryption failed. Wrong password or corrupted file.');
             } else {
-                alert('Download failed: ' + error.message);
+                self.showDownloadError(error.message);
             }
         }
     };
@@ -2872,6 +3009,108 @@ window.MyFileManagerCrypto = {
     MyFileManager.prototype.closeModal = function () {
         this.elements.modal.style.display = 'none';
         this.elements.modal.innerHTML = '';
+    };
+
+    /**
+ * Show download progress modal
+ */
+    MyFileManager.prototype.showDownloadProgress = function (filename, filesize) {
+        var modal = this.elements.downloadModal;
+        var filenameEl = modal.querySelector('.mfm-download-filename');
+        var filesizeEl = modal.querySelector('.mfm-download-filesize');
+        var statusDiv = modal.querySelector('.mfm-download-status');
+        var actionsDiv = modal.querySelector('.mfm-download-actions');
+
+        if (filenameEl) {
+            filenameEl.textContent = filename;
+        }
+
+        if (filesizeEl) {
+            filesizeEl.textContent = 'Size: ' + this.formatSize(filesize);
+        }
+
+        // Reset status and actions
+        if (statusDiv) {
+            statusDiv.style.display = 'none';
+        }
+        if (actionsDiv) {
+            actionsDiv.style.display = 'none';
+        }
+
+        modal.style.display = 'flex';
+        this.updateDownloadProgress(0, 0, 0);
+    };
+
+    /**
+     * Hide download progress modal
+     */
+    MyFileManager.prototype.hideDownloadProgress = function () {
+        this.elements.downloadModal.style.display = 'none';
+        this.currentDownloadController = null;
+    };
+
+    /**
+     * Update download progress
+     */
+    MyFileManager.prototype.updateDownloadProgress = function (percent, speed, timeRemaining) {
+        var modal = this.elements.downloadModal;
+        var progressFill = modal.querySelector('.mfm-progress-fill');
+        var progressText = modal.querySelector('.mfm-progress-text');
+        var speedEl = modal.querySelector('.mfm-download-speed');
+        var timeEl = modal.querySelector('.mfm-download-time');
+
+        if (progressFill) {
+            progressFill.style.width = percent + '%';
+        }
+
+        if (progressText) {
+            progressText.textContent = Math.round(percent) + '%';
+        }
+
+        if (speedEl) {
+            speedEl.textContent = this.formatSize(speed) + '/s';
+        }
+
+        if (timeEl && timeRemaining < Infinity) {
+            var minutes = Math.floor(timeRemaining / 60);
+            var seconds = Math.floor(timeRemaining % 60);
+            timeEl.textContent = minutes + 'm ' + seconds + 's remaining';
+        }
+    };
+
+    /**
+     * Show download error
+     */
+    MyFileManager.prototype.showDownloadError = function (message) {
+        var modal = this.elements.downloadModal;
+        var statusDiv = modal.querySelector('.mfm-download-status');
+        var statusMsg = modal.querySelector('.mfm-download-status-message');
+        var actionsDiv = modal.querySelector('.mfm-download-actions');
+        var progressContainer = modal.querySelector('.mfm-progress-container');
+
+        if (progressContainer) {
+            progressContainer.style.display = 'none';
+        }
+
+        if (statusDiv && statusMsg) {
+            statusMsg.innerHTML = '<strong>Error:</strong> ' + this.escapeHtml(message);
+            statusDiv.style.display = 'block';
+            statusDiv.style.color = '#d32f2f';
+        }
+
+        if (actionsDiv) {
+            actionsDiv.style.display = 'block';
+        }
+    };
+
+    /**
+     * Cancel download
+     */
+    MyFileManager.prototype.cancelDownload = function () {
+        if (this.currentDownloadController) {
+            this.currentDownloadController.abort();
+            this.currentDownloadController = null;
+        }
     };
 
     /**
