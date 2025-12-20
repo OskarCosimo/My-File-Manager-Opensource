@@ -199,6 +199,11 @@ private function cmdRestore($params) {
     $target = $params['target'] ?? '';
     $path = $this->resolvePath($target);
     
+    // check if target is a directory read-only
+    if ($this->isReadOnlyFolder($path)) {
+        throw new Exception('Cannot upload to this folder: read-only', 403);
+    }
+
     // Check quota before upload
     if (!$this->checkQuota()) {
         throw new Exception('Quota exceeded', 507);
@@ -233,11 +238,6 @@ private function cmdRestore($params) {
      * 
      * @param array $params Parameters
      */
-    /**
- * Download file command
- * 
- * @param array $params Parameters
- */
 private function cmdDownload($params) {
     if (!$this->hasPermission('read')) {
         throw new Exception('Permission denied', 403);
@@ -245,6 +245,11 @@ private function cmdDownload($params) {
     
     $target = $params['target'] ?? '';
     $path = $this->resolvePath($target);
+
+    // Check extension permission for read
+    if (!$this->checkExtensionPermission($path, 'read')) {
+        throw new Exception('Cannot download this file type: permission denied', 403);
+    }
     
     if (!file_exists($path) || !is_file($path)) {
         throw new Exception('File not found', 404);
@@ -254,33 +259,37 @@ private function cmdDownload($params) {
     $fileSize = filesize($path);
     $fileName = basename($path);
     
-    // CRITICAL: Clean ALL output buffers before sending file
+    // Clean ALL output buffers BEFORE any headers
     while (@ob_end_clean());
     
     // Disable output compression
-    @ini_set('zlib.output_compression', 0);
+    @ini_set('zlib.output_compression', '0');
     if (function_exists('apache_setenv')) {
         @apache_setenv('no-gzip', '1');
     }
     
-    // Set headers for download
+    // Set headers in correct order
     header('Content-Type: application/octet-stream');
     header('Content-Disposition: attachment; filename="' . $fileName . '"');
     header('Content-Length: ' . $fileSize);
     header('Content-Transfer-Encoding: binary');
-    header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-    header('Pragma: public');
+    header('Cache-Control: no-cache, must-revalidate');
+    header('Pragma: no-cache');
     header('Expires: 0');
     
-    // Use fpassthru instead of readfile (more reliable)
+    // Stream file in small chunks
     $fp = @fopen($path, 'rb');
     if ($fp === false) {
         throw new Exception('Cannot open file', 500);
     }
     
-    fpassthru($fp);
-    fclose($fp);
+    // Stream in 8KB chunks
+    while (!feof($fp)) {
+        echo fread($fp, 8192);
+        flush();
+    }
     
+    fclose($fp);
     exit;
 }
     
@@ -302,6 +311,16 @@ private function cmdDelete($params) {
 
     foreach ($targets as $target) {
         $path = $this->resolvePath($target);
+
+        // Check extension permission for delete
+        if (!$this->checkExtensionPermission($path, 'delete')) {
+            throw new Exception('Cannot delete this file type: permission denied', 403);
+        }
+
+        // Check if folder is protected
+        if (is_dir($path) && $this->isProtectedFolder($path)) {
+            throw new Exception('Cannot delete protected folder: ' . basename($path), 403);
+        }
         $realTrashPath = realpath($this->config['trashPath']);
         $realPath = realpath($path);
 
@@ -345,6 +364,17 @@ if (!empty($ext) && isset($this->config['banExtensions']) && in_array($ext, $thi
 }
     
     $oldPath = $this->resolvePath($target);
+
+    // Check extension permission for write
+    if (!$this->checkExtensionPermission($oldPath, 'write')) {
+        throw new Exception('Cannot rename this file type: permission denied', 403);
+    }
+
+    // Check if folder is protected
+    if (is_dir($oldPath) && $this->isProtectedFolder($oldPath)) {
+        throw new Exception('Cannot rename protected folder', 403);
+    }
+
     $newPath = dirname($oldPath) . DIRECTORY_SEPARATOR . $name;
     
     if (file_exists($newPath)) {
@@ -358,6 +388,38 @@ if (!empty($ext) && isset($this->config['banExtensions']) && in_array($ext, $thi
         'removed' => [$target]
     ];
 }
+
+    /**
+     * Check if folder is protected (cannot be renamed/deleted)
+     *
+     * @param string $path Folder path to check
+     * @return bool
+     */
+    private function isProtectedFolder($path) {
+        // Check if config option exists
+        if (!isset($this->config['protectedFolders']) || empty($this->config['protectedFolders'])) {
+            return false;
+        }
+        
+        $realPath = realpath($path);
+        $realRootPath = realpath($this->config['rootPath']);
+        
+        if (!$realPath || !$realRootPath) return false;
+        
+        $relativePath = substr($realPath, strlen($realRootPath));
+        $relativePath = trim($relativePath, DIRECTORY_SEPARATOR);
+        $relativePath = str_replace(DIRECTORY_SEPARATOR, '/', $relativePath);
+        
+        foreach ($this->config['protectedFolders'] as $folder) {
+            $folder = trim($folder, '/\\');
+            // Check exact match only (not subfolders)
+            if ($relativePath === $folder) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
     
     /**
      * Copy file/folder command
@@ -449,6 +511,12 @@ private function cmdMkdir($params) {
     $name = $this->security->sanitizeFilename($name);
     
     $parentPath = $this->resolvePath($target);
+
+    // Check if parent folder is read-only
+    if ($this->isReadOnlyFolder($parentPath)) {
+        throw new Exception('Cannot create folder here: read-only', 403);
+    }
+
     $newPath = $parentPath . DIRECTORY_SEPARATOR . $name;
     
     if (file_exists($newPath)) {
@@ -458,7 +526,39 @@ private function cmdMkdir($params) {
     mkdir($newPath, 0750, true);
     return ['added' => [$this->getFileInfo($newPath)]];
 }
-    
+
+    /**
+     * Check if folder is read-only (no upload/mkdir allowed)
+     *
+     * @param string $path Folder path to check
+     * @return bool
+     */
+    private function isReadOnlyFolder($path) {
+        // Check if config option exists
+        if (!isset($this->config['readOnlyFolders']) || empty($this->config['readOnlyFolders'])) {
+            return false;
+        }
+        
+        $realPath = realpath($path);
+        $realRootPath = realpath($this->config['rootPath']);
+        
+        if (!$realPath || !$realRootPath) return false;
+        
+        $relativePath = substr($realPath, strlen($realRootPath));
+        $relativePath = trim($relativePath, DIRECTORY_SEPARATOR);
+        $relativePath = str_replace(DIRECTORY_SEPARATOR, '/', $relativePath);
+        
+        foreach ($this->config['readOnlyFolders'] as $folder) {
+            $folder = trim($folder, '/\\');
+            // Check exact match or subfolder
+            if ($relativePath === $folder || strpos($relativePath, $folder . '/') === 0) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
     /**
      * Get file/folder info command
      * 
@@ -587,6 +687,14 @@ private function cmdMkdir($params) {
             $info['volumeid'] = 'l1_';
             $info['dirs'] = $this->hasDirs($path) ? 1 : 0;
         }
+
+        // Add extension-specific permissions
+    if (is_file($path)) {
+        $info['read'] = $this->checkExtensionPermission($path, 'read');
+        $info['write'] = $this->checkExtensionPermission($path, 'write') && $this->hasPermission('write');
+        $info['rm'] = $this->checkExtensionPermission($path, 'delete') && $this->hasPermission('delete');
+        $info['openable'] = $this->checkExtensionPermission($path, 'open');
+    }
         
         if ($detailed) {
             $info['path'] = $relativePath;
@@ -915,4 +1023,47 @@ private function checkQuota() {
     private function hasPermission($permission) {
         return in_array($permission, $this->user['permissions'] ?? []);
     }
+    
+    /**
+     * Get extension from filename
+     *
+     * @param string $filename Filename
+     * @return string Extension without dot (lowercase)
+     */
+    private function getExtension($filename) {
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        return $ext;
+    }
+    
+    /**
+     * Check if file extension has specific permission
+     *
+     * @param string $path File path
+     * @param string $action Action to check (read, write, open, delete)
+     * @return bool
+     */
+    private function checkExtensionPermission($path, $action) {
+        // Directories always have full permissions
+        if (is_dir($path)) {
+            return true;
+        }
+        
+        $filename = basename($path);
+        $ext = $this->getExtension($filename);
+        
+        // Check if extension has specific restrictions
+        if (isset($this->config['extensionRestrictions'][$ext])) {
+            $restrictions = $this->config['extensionRestrictions'][$ext];
+            return $restrictions[$action] ?? true;
+        }
+        
+        // Use default permissions for unlisted extensions
+        if (isset($this->config['defaultExtensionPermissions'][$action])) {
+            return $this->config['defaultExtensionPermissions'][$action];
+        }
+        
+        // Fallback: allow everything
+        return true;
+    }
+
 }
