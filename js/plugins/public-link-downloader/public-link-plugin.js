@@ -14,17 +14,21 @@
             this.fm = fileManager;
             this.apiUrl = fileManager.options.url;
 
+            // Configure cancelJsonFile option (default: true for backward compatibility)
+            this.cancelJsonFile = fileManager.options.publicLinksCancelJsonFile !== undefined
+                ? fileManager.options.publicLinksCancelJsonFile
+                : true;
+
             // Configure download URL: explicit option or auto-detect from connector URL
             if (fileManager.options.publicLinksDownloadUrl) {
-                // Use explicit configuration
                 this.downloadUrl = fileManager.options.publicLinksDownloadUrl;
             } else {
-                // Fallback: auto-detect by replacing 'connector.php' with 'download.php'
                 this.downloadUrl = this.apiUrl.replace('connector.php', 'download.php');
             }
 
             console.log('✅ Public Link Plugin initialized');
             console.log('🔗 Download URL:', this.downloadUrl);
+            console.log('🗑️ Cancel JSON on expiration:', this.cancelJsonFile);
 
             // ensure customContextMenu exists
             if (!this.fm.options.customContextMenu) {
@@ -229,6 +233,7 @@
                 formData.append('expiration_minutes', expiration);
                 formData.append('wait_seconds', waitTime);
                 formData.append('max_downloads', maxDownloads);
+                formData.append('cancel_json_file', this.cancelJsonFile ? '1' : '0');
 
                 if (this.fm.options.token) {
                     formData.append('token', this.fm.options.token);
@@ -382,18 +387,27 @@
                 links.forEach(link => {
                     const expiresDate = new Date(link.expires_at * 1000);
                     const now = new Date();
-                    const isExpired = expiresDate < now;
+                    const isExpired = link.is_expired || expiresDate < now;
                     const linkTypeLabel = link.link_type === 'public' ? '🌐 Public' : '🔒 Registered';
 
-                    linksHTML += '<tr style="border-bottom: 1px solid #eee;">';
-                    linksHTML += `<td style="padding: 10px;">${self.escapeHtml(link.file_name)}</td>`;
+                    // Stile per i link scaduti
+                    const rowStyle = isExpired ? 'background-color: #fff3cd; opacity: 0.75;' : '';
+                    const expiredBadge = isExpired ? ' <span style="color: #dc3545; font-weight: bold; font-size: 11px;">[EXPIRED]</span>' : '';
+
+                    linksHTML += `<tr style="border-bottom: 1px solid #eee; ${rowStyle}">`;
+                    linksHTML += `<td style="padding: 10px;">${self.escapeHtml(link.file_name)}${expiredBadge}</td>`;
                     linksHTML += `<td style="padding: 10px; text-align: center;">${linkTypeLabel}</td>`;
                     linksHTML += `<td style="padding: 10px; text-align: center;">${link.download_count}${link.max_downloads > 0 ? '/' + link.max_downloads : ''}</td>`;
-                    linksHTML += `<td style="padding: 10px; text-align: center; color: ${isExpired ? 'red' : 'inherit'}">${expiresDate.toLocaleString()}</td>`;
-                    linksHTML += `<td style="padding: 10px; text-align: center;">
-                        <button class="mfm-btn link-copy-btn" data-token="${link.token}" style="font-size: 12px; padding: 5px 10px;">Copy</button>
-                        <button class="mfm-btn mfm-btn-danger link-delete-btn" data-token="${link.token}" style="font-size: 12px; padding: 5px 10px; margin-left: 5px; background: #f44336;">Delete</button>
-                    </td>`;
+                    linksHTML += `<td style="padding: 10px; text-align: center; color: ${isExpired ? '#dc3545' : 'inherit'}; font-weight: ${isExpired ? 'bold' : 'normal'};">${expiresDate.toLocaleString()}</td>`;
+                    linksHTML += `<td style="padding: 10px; text-align: center;">`;
+
+                    // Mostra il bottone "Copy" solo se il link non è scaduto
+                    if (!isExpired) {
+                        linksHTML += `<button class="mfm-btn link-copy-btn" data-token="${link.token}" style="font-size: 12px; padding: 5px 10px;">Copy</button>`;
+                    }
+
+                    linksHTML += `<button class="mfm-btn mfm-btn-danger link-delete-btn" data-token="${link.token}" style="font-size: 12px; padding: 5px 10px; margin-left: 5px; background: #f44336;">Delete</button>`;
+                    linksHTML += `</td>`;
                     linksHTML += '</tr>';
                 });
 
@@ -401,18 +415,18 @@
             }
 
             const modalHTML = `
-                <div class="mfm-modal-overlay" id="link-manager-modal">
-                    <div class="mfm-modal-dialog" style="max-width: 1000px;">
-                        <div class="mfm-modal-header">
-                            <h3>📊 Manage Public Links</h3>
-                            <button class="mfm-modal-close" id="close-manager-modal">×</button>
-                        </div>
-                        <div class="mfm-modal-body" style="max-height: 500px; overflow-y: auto;">
-                            ${linksHTML}
-                        </div>
-                    </div>
+        <div class="mfm-modal-overlay" id="link-manager-modal">
+            <div class="mfm-modal-dialog" style="max-width: 1000px;">
+                <div class="mfm-modal-header">
+                    <h3>📊 Manage Public Links</h3>
+                    <button class="mfm-modal-close" id="close-manager-modal">×</button>
                 </div>
-            `;
+                <div class="mfm-modal-body" style="max-height: 500px; overflow-y: auto;">
+                    ${linksHTML}
+                </div>
+            </div>
+        </div>
+    `;
 
             const modalDiv = document.createElement('div');
             modalDiv.innerHTML = modalHTML;
