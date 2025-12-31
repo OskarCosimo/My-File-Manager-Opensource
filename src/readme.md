@@ -233,6 +233,8 @@ $config = [
 
 ## Plugin System
 
+To enable or disable a plugin or configure its options in the php environment you must edit your connector.php file with the needed plugin.
+
 ### Video Editor Plugin (video_editor.php)
 
 Enables FFmpeg-based video processing:
