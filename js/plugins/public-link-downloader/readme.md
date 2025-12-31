@@ -47,7 +47,7 @@ In `plugins/publiclinks.php`, configure the storage directory for the json files
 ```php
 class PubliclinksPlugin {
     // Configure this path to store link data
-    const PUBLIC_LINKS_DIR = '/path/to/your/storage/public_links';
+    const PUBLIC_LINKS_DIR = '/path/to/your/storage/public_links'; //the path for the store location of the json files
     const DOWNLOAD_URL = '/download.php';  // Default download URL
 
     // ... rest of the code
@@ -60,7 +60,7 @@ In `download.php`, set the storage directory for the json files:
 
 ```php
 // Configure this path (must match the plugin configuration)
-define('PUBLIC_LINKS_DIR', '/path/to/your/storage/public_links');
+define('PUBLIC_LINKS_DIR', '/path/to/your/storage/public_links'); //the path for the store location of the json files
 define('DISPLAY_TIMEZONE', 'UTC');  // Or 'Europe/Rome', 'America/New_York', etc.
 ```
 
@@ -82,6 +82,7 @@ var fm = new MyFileManager('#file-manager', {
     // Optional: Specify custom download URL
     // If not specified, auto-detects by replacing 'connector.php' with 'download.php'
     publicLinksDownloadUrl: '/path/to/download.php',
+    publicLinksCancelJsonFile: true, // delete the json files when links expired, default true allowed options: true/false
 
     // ... other options
 });
