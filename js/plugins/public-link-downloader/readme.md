@@ -83,7 +83,10 @@ var fm = new MyFileManager('#file-manager', {
     // If not specified, auto-detects by replacing 'connector.php' with 'download.php'
     publicLinksDownloadUrl: '/path/to/download.php',
     publicLinksCancelJsonFile: true, // delete the json files when links expired, default true allowed options: true/false
-
+    // limit the option for link expiration (in this example from 30 minutes to 2 days), specified in minutes
+    publicLinksExpirations: [30, 60, 120, 180, 360, 720, 1440, 2160, 2880],
+    // limit the option for the wait time in the download page (0 is no wait), specified in seconds
+    publicLinksWaitTimes: [0, 10, 30, 60, 120, 300],
     // ... other options
 });
 ```
