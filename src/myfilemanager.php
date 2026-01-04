@@ -199,9 +199,14 @@ private function cmdRestore($params) {
     $target = $params['target'] ?? '';
     $path = $this->resolvePath($target);
     
-    // check if target is a directory read-only
+    // Check if target is a directory read-only
     if ($this->isReadOnlyFolder($path)) {
         throw new Exception('Cannot upload to this folder: read-only', 403);
+    }
+
+    // Check if folder blocks uploads
+    if ($this->isUploadBlockedFolder($path)) {
+    throw new Exception("Cannot upload to this folder (upload blocked)", 403);
     }
 
     // Check quota before upload
@@ -517,6 +522,11 @@ private function cmdMkdir($params) {
         throw new Exception('Cannot create folder here: read-only', 403);
     }
 
+    // Check if folder blocks mkdir
+    if ($this->isUploadBlockedFolder($parentPath)) {
+    throw new Exception("Cannot create folder here (upload blocked)", 403);
+    }
+
     $newPath = $parentPath . DIRECTORY_SEPARATOR . $name;
     
     if (file_exists($newPath)) {
@@ -558,6 +568,42 @@ private function cmdMkdir($params) {
         
         return false;
     }
+
+ /**
+ * Check if folder blocks upload and mkdir operations
+ * Applies to folder and ALL its subfolders
+ * @param string $path Folder path to check
+ * @return bool
+ */
+private function isUploadBlockedFolder($path) {
+    // Check if config option exists
+    if (!isset($this->config['uploadBlockedFolders']) || empty($this->config['uploadBlockedFolders'])) {
+        return false;
+    }
+    
+    $realPath = realpath($path);
+    $realRootPath = realpath($this->config['rootPath']);
+    
+    if (!$realPath || !$realRootPath) {
+        return false;
+    }
+    
+    // Calculate relative path from root
+    $relativePath = substr($realPath, strlen($realRootPath));
+    $relativePath = trim($relativePath, DIRECTORY_SEPARATOR);
+    $relativePath = str_replace(DIRECTORY_SEPARATOR, '/', $relativePath);
+    
+    foreach ($this->config['uploadBlockedFolders'] as $folder) {
+        $folder = trim($folder, '/');
+        
+        // Check exact match or subfolder (blocks folder AND all subfolders)
+        if ($relativePath === $folder || strpos($relativePath, $folder . '/') === 0) {
+            return true;
+        }
+    }
+    
+    return false;
+}
 
     /**
      * Get file/folder info command
@@ -815,12 +861,42 @@ private function cmdMkdir($params) {
 
 /**
  * Calculate user space usage recursively
+ * Excludes folders specified in quotaExcludedFolders from calculation
  */
 private function calculateUserSpace($path) {
     $size = 0;
     
     if (!is_dir($path) || !is_readable($path)) {
         return 0;
+    }
+    
+    // Get real paths for comparison
+    $realPath = realpath($path);
+    $realRootPath = realpath($this->config['rootPath']);
+    
+    // Calculate relative path from root
+    $relativePath = '';
+    if ($realPath && $realRootPath) {
+        if ($realPath === $realRootPath) {
+            $relativePath = ''; // Root folder
+        } elseif (strpos($realPath, $realRootPath) === 0) {
+            $relativePath = substr($realPath, strlen($realRootPath));
+            $relativePath = ltrim($relativePath, DIRECTORY_SEPARATOR);
+            $relativePath = str_replace(DIRECTORY_SEPARATOR, '/', $relativePath);
+        }
+    }
+    
+    // Check if this folder should be excluded from quota calculation
+    if (isset($this->config['quotaExcludedFolders']) && !empty($this->config['quotaExcludedFolders'])) {
+        foreach ($this->config['quotaExcludedFolders'] as $excludedFolder) {
+            $excludedFolder = trim($excludedFolder, '/');
+            
+            // Check if current path matches excluded folder or is a subfolder
+            if ($relativePath === $excludedFolder || strpos($relativePath, $excludedFolder . '/') === 0) {
+                error_log("Quota: Excluding folder from calculation: '" . $relativePath . "'");
+                return 0; // Don't count this folder and its contents
+            }
+        }
     }
     
     try {
@@ -837,8 +913,12 @@ private function calculateUserSpace($path) {
             $itemPath = $path . DIRECTORY_SEPARATOR . $item;
             
             if (is_file($itemPath)) {
-                $size += filesize($itemPath);
+                $fileSize = @filesize($itemPath);
+                if ($fileSize !== false) {
+                    $size += $fileSize;
+                }
             } elseif (is_dir($itemPath)) {
+                // Recursively calculate subdirectory size (will auto-exclude if needed)
                 $size += $this->calculateUserSpace($itemPath);
             }
         }
