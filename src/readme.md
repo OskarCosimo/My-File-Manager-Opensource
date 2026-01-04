@@ -183,6 +183,26 @@ $config = [
 ];
 ```
 
+### Folders excluded from quota calculation
+
+These folders will be excluded from quota calculation allowed them to have infinite GB, comma separate value to specify more folders:
+
+```php
+$config = [
+    'quotaExcludedFolders' => ['infinitefolder', 'backup'], // Folders excluded from GB quota
+];
+```
+
+### Folders where upload and mkdir are completely blocked
+
+These folders upload and make new folders are completely disabled (these folders and subfolders too), comma separate value to specify more folders:
+
+```php
+$config = [
+    'uploadBlockedFolders' => ['nouploadfolder', 'backup'], // No upload/mkdir allowed here and subfolders
+];
+```
+
 ---
 
 ## Extension Restrictions
