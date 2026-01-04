@@ -115,6 +115,12 @@ try {
         'readOnlyFolders' => ['.trash', 'system', 'config'], // Folders where upload/mkdir is blocked
 
         'protectedFolders' => ['.trash', 'uploads', 'backup'], // Folders that cannot be renamed/deleted
+
+        // Folders excluded from quota calculation (infinite GB allowed)
+        'quotaExcludedFolders' => ['backup'], // Folders excluded from GB quota
+
+        // Folders where upload and mkdir are completely blocked
+        'uploadBlockedFolders' => ['backup'], // No upload/mkdir allowed here and subfolders
         
         // Allowed mime types
         'allowedMimeTypes' => ['image/*', 'video/*', 'audio/*', 'text/*', 'application/pdf', 'text/plain'],
@@ -350,28 +356,81 @@ if ($cmd === 'upload') {
         throw new Exception('Operation not allowed', 403);
     }
 
-// Security check for banned extensions
-$uploadFile = $_FILES['upload'] ?? null;
-if (!empty($uploadFile['name'])) {
-    // Gestisci sia singolo file che array multipli
-    $fileNames = is_array($uploadFile['name']) ? $uploadFile['name'] : [$uploadFile['name']];
-    
-    foreach ($fileNames as $fileName) {
-        $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-        if (in_array($ext, $config['banExtensions'])) {
-            error_log("BANNED: " . $fileName);
-            http_response_code(403);
-            echo json_encode(['error' => 'Dangerous extension: ' . $ext]);
-            exit;
+    // Security check for banned extensions
+    $uploadFile = $_FILES['upload'] ?? null;
+    if (!empty($uploadFile['name'])) {
+        // Gestisci sia singolo file che array multipli
+        $fileNames = is_array($uploadFile['name']) ? $uploadFile['name'] : [$uploadFile['name']];
+        
+        foreach ($fileNames as $fileName) {
+            $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+            if (in_array($ext, $config['banExtensions'])) {
+                error_log("BANNED: " . $fileName);
+                http_response_code(403);
+                echo json_encode(['error' => 'Dangerous extension: ' . $ext]);
+                exit;
+            }
         }
     }
-}
 
     // Fix for empty files
     if (($uploadFile['size'] ?? 0) === 0) {
         http_response_code(400);
         echo json_encode(['error' => 'Empty files not allowed', 'code' => 400]);
         exit;
+    }
+
+    // Decode target path (if base64 encoded), otherwise use root
+    $targetPath = $_POST['target'] ?? '';
+    if (!empty($targetPath)) {
+        // Decode and convert to absolute path
+        $relativePath = base64_decode($targetPath);
+        $targetPath = $config['rootPath'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+        
+        // Ensure directory exists
+        if (!is_dir($targetPath)) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Target directory does not exist', 'code' => 404]);
+            exit;
+        }
+    } else {
+        $targetPath = $config['rootPath'];
+    }
+
+    // Check if upload is blocked in this folder
+    if (isset($config['uploadBlockedFolders']) && !empty($config['uploadBlockedFolders'])) {
+        $realPath = realpath($targetPath);
+        $realRootPath = realpath($config['rootPath']);
+        
+        if ($realPath && $realRootPath) {
+            // Calculate relative path from root
+            $relativePathCheck = '';
+            if ($realPath === $realRootPath) {
+                $relativePathCheck = '';
+            } elseif (strpos($realPath, $realRootPath) === 0) {
+                $relativePathCheck = substr($realPath, strlen($realRootPath));
+                $relativePathCheck = ltrim($relativePathCheck, DIRECTORY_SEPARATOR);
+                $relativePathCheck = str_replace(DIRECTORY_SEPARATOR, '/', $relativePathCheck);
+            }
+            
+            // Check if folder is blocked (exact match or subfolder)
+            foreach ($config['uploadBlockedFolders'] as $folder) {
+                $folder = trim($folder, '/');
+                
+                // Log for debugging
+                error_log("Upload check: comparing '$relativePathCheck' with blocked folder '$folder'");
+                
+                // Check exact match or subfolder
+                if ($relativePathCheck === $folder || strpos($relativePathCheck, $folder . '/') === 0) {
+                    error_log("Upload BLOCKED in folder: $relativePathCheck");
+                    http_response_code(403);
+                    echo json_encode(['error' => 'Cannot upload to this folder (upload blocked)', 'code' => 403]);
+                    exit;
+                }
+            }
+            
+            error_log("Upload ALLOWED in folder: $relativePathCheck");
+        }
     }
 
     //  Use ChunkUploader for ALL files (removes < 5MB special case)
@@ -381,24 +440,7 @@ if (!empty($uploadFile['name'])) {
         'banExtensions' => $config['banExtensions']
     ]);
 
-    // Decode target path (if base64 encoded), otherwise use root
-$targetPath = $_POST['target'] ?? '';
-if (!empty($targetPath)) {
-    // Decode and convert to absolute path
-    $relativePath = base64_decode($targetPath);
-    $targetPath = $config['rootPath'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
-    
-    // Ensure directory exists
-    if (!is_dir($targetPath)) {
-        http_response_code(404);
-        echo json_encode(['error' => 'Target directory does not exist', 'code' => 404]);
-        exit;
-    }
-} else {
-    $targetPath = $config['rootPath'];
-}
-
-$result = $uploader->handleUpload($uploadFile, $targetPath, $_POST);
+    $result = $uploader->handleUpload($uploadFile, $targetPath, $_POST);
     echo json_encode($result);
     exit;
 }
