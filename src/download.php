@@ -1,5 +1,6 @@
 <?php
 /**
+ * // download.php
  * Public Download Page - Standalone
  * Generic version with configurable authentication
  */
@@ -8,20 +9,16 @@
 // CONFIGURATION
 // ============================================================================
 
-// FILE PATH OF THE JSON FILE (MUST BE THE SAME OF THE PLUGIN)
+// FILE PATH OF THE JSON DIRECTORY (MUST MATCH THE PLUGIN)
 define('PUBLIC_LINKS_DIR', __DIR__ . '/files/public_links');
 
 // DATE/TIME TIMEZONE
 define('DISPLAY_TIMEZONE', 'UTC');
 
 // AUTHENTICATION CONFIGURATION
-// You can implement your own authentication by modifying the isUserAuthenticated() function below
-// or by including your own authentication system
+// Implement your own authentication by modifying isUserAuthenticated() below
 define('AUTH_ENABLED', false); // Set to true to enable custom authentication
 define('AUTH_LOGIN_URL', '/login.php'); // URL to redirect for login
-
-// Optional: Include your custom authentication system
-// Example: include_once __DIR__ . '/auth/your-auth-system.php';
 
 // ============================================================================
 // PREVENT BROWSER CACHING
@@ -36,124 +33,155 @@ header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Cache-Control: post-check=0, pre-check=0', false);
 header('Pragma: no-cache');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
 
-// Cloudflare-specific headers to force bypass
+// Cloudflare / CDN cache bypass headers
 header('CF-Cache-Status: BYPASS');
 header('CDN-Cache-Control: no-cache');
-
-// Vary header to prevent caching different tokens
 header('Vary: *');
 
-// Start session
-session_start();
+// Start session safely
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 /**
- * Find link file by token
+ * Validate token format (64 lowercase hex characters)
+ *
+ * @param string $token
+ * @return bool
+ */
+function isValidToken($token) {
+    return is_string($token) && preg_match('/^[a-f0-9]{64}$/', $token) === 1;
+}
+
+/**
+ * Find link file by token safely
+ *
+ * @param string $token
+ * @return string|null
  */
 function findLinkFile($token) {
-    $linkFile = PUBLIC_LINKS_DIR . '/' . $token . '.json';
-    return file_exists($linkFile) ? $linkFile : null;
+    if (!isValidToken($token)) {
+        return null;
+    }
+    $linkFile = rtrim(PUBLIC_LINKS_DIR, '/\\') . DIRECTORY_SEPARATOR . $token . '.json';
+    return is_file($linkFile) ? $linkFile : null;
 }
 
 /**
  * Load link data by token
+ *
+ * @param string $token
+ * @return array|null
  */
 function loadLinkData($token) {
     $linkFile = findLinkFile($token);
-    
-    if (!$linkFile) {
-        error_log("❌ Token not found: {$token}");
+
+    if (!$linkFile || !is_readable($linkFile)) {
         return null;
     }
-    
-    error_log("✅ Found link file: {$linkFile}");
-    
-    if (!is_readable($linkFile)) {
-        error_log("❌ Link file not readable");
-        return null;
-    }
-    
-    $content = file_get_contents($linkFile);
+
+    $content = @file_get_contents($linkFile);
     if ($content === false) {
-        error_log("❌ Failed to read file");
         return null;
     }
-    
+
     $data = json_decode($content, true);
-    if ($data === null) {
-        error_log("❌ JSON decode error: " . json_last_error_msg());
+    if (!is_array($data)) {
+        error_log('JSON decode error: ' . json_last_error_msg());
         return null;
     }
-    
+
     return $data;
 }
 
 /**
- * Increment download counter
+ * Atomically validate download limit and increment download counter
+ *
+ * @param string $token
+ * @return array|false Updated link data on success, false if limit reached or error
  */
-function incrementDownload($token, $linkData) {
+function incrementDownload($token) {
     $linkFile = findLinkFile($token);
-    
     if (!$linkFile) {
-        error_log("❌ Cannot increment: file not found");
         return false;
     }
-    
-    $linkData['download_count']++;
+
+    $fp = @fopen($linkFile, 'c+');
+    if (!$fp) {
+        return false;
+    }
+
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return false;
+    }
+
+    $raw = stream_get_contents($fp);
+    $linkData = json_decode($raw ?: '', true);
+
+    if (!is_array($linkData)) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return false;
+    }
+
+    $maxDownloads = (int)($linkData['max_downloads'] ?? 0);
+    $currentCount = (int)($linkData['download_count'] ?? 0);
+
+    if ($maxDownloads > 0 && $currentCount >= $maxDownloads) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return false;
+    }
+
+    $linkData['download_count'] = $currentCount + 1;
     $linkData['last_download_at'] = time();
-    
-    $result = file_put_contents($linkFile, json_encode($linkData, JSON_PRETTY_PRINT));
-    
-    if ($result === false) {
-        error_log("❌ Failed to update download count");
+
+    $encoded = json_encode($linkData, JSON_PRETTY_PRINT);
+    if ($encoded === false) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
         return false;
     }
-    
-    error_log("✅ Download count incremented to: " . $linkData['download_count']);
-    return true;
+
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, $encoded);
+    fflush($fp);
+
+    flock($fp, LOCK_UN);
+    fclose($fp);
+
+    return $linkData;
 }
 
 /**
  * Check if user is authenticated
- * 
  * CUSTOMIZE THIS FUNCTION FOR YOUR AUTHENTICATION SYSTEM
- * 
- * Examples:
- * - return !empty($_SESSION['user_id']);
- * - return !empty($_SESSION['logged_in']);
- * - return isset($_COOKIE['auth_token']) && validateToken($_COOKIE['auth_token']);
- * - return checkCustomAuth();
+ *
+ * @return bool
  */
 function isUserAuthenticated() {
     if (!AUTH_ENABLED) {
-        return false; // Authentication disabled, registered links not available
+        return false;
     }
-    
-    // Example implementations (uncomment and modify as needed):
-    
-    // Basic session check
+
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
-    
-    // Or check for logged_in flag
-    // return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
-    
-    // Or check cookie
-    // return isset($_COOKIE['auth_token']) && !empty($_COOKIE['auth_token']);
-    
-    // Or use custom function
-    // return yourCustomAuthCheck();
 }
 
 /**
  * Get current authenticated user info (optional)
- * Return array with 'username' or null if not authenticated
+ *
+ * @return array|null
  */
 function getCurrentUser() {
     if (!isUserAuthenticated()) {
         return null;
     }
-    
-    // Customize based on your authentication system
+
     return [
         'username' => $_SESSION['username'] ?? $_SESSION['user_name'] ?? 'User',
         'id' => $_SESSION['user_id'] ?? null
@@ -164,46 +192,44 @@ function getCurrentUser() {
 // MAIN LOGIC
 // ============================================================================
 
-$token = $_GET['t'] ?? '';
-$action = $_GET['action'] ?? 'view';
+$token = trim((string)($_GET['t'] ?? ''));
+$action = (string)($_GET['action'] ?? 'view');
 
-if (empty($token)) {
+if (!isValidToken($token)) {
+    http_response_code(400);
     die('❌ Invalid download link');
 }
 
-// Load link data
 $link = loadLinkData($token);
 
 if (!$link) {
+    http_response_code(404);
     die('❌ Link not found or expired');
 }
 
 // Check expiration
-if ($link['expires_at'] < time()) {
-    die('❌ Link has expired on ' . date('Y-m-d H:i:s', $link['expires_at']));
+if ((int)($link['expires_at'] ?? 0) < time()) {
+    http_response_code(410);
+    die('❌ Link has expired on ' . htmlspecialchars(date('Y-m-d H:i:s', (int)$link['expires_at']), ENT_QUOTES, 'UTF-8'));
 }
 
 // Check max downloads
-if ($link['max_downloads'] > 0 && $link['download_count'] >= $link['max_downloads']) {
-    die('❌ Download limit reached (' . $link['max_downloads'] . ' downloads)');
+if ((int)($link['max_downloads'] ?? 0) > 0 && (int)($link['download_count'] ?? 0) >= (int)$link['max_downloads']) {
+    http_response_code(410);
+    die('❌ Download limit reached (' . (int)$link['max_downloads'] . ' downloads)');
 }
 
 // Check if registered users only
-if ($link['link_type'] === 'registered') {
+if (($link['link_type'] ?? 'public') === 'registered') {
     if (!AUTH_ENABLED) {
         http_response_code(403);
         die('🔒 This link requires authentication, but authentication is not enabled on this server.');
     }
-    
+
     if (!isUserAuthenticated()) {
         http_response_code(403);
-        $loginUrl = AUTH_LOGIN_URL;
-        die('🔒 This link requires login. Please <a href="' . htmlspecialchars($loginUrl) . '" style="color: #667eea; text-decoration: underline;">login</a> first to access this file.');
-    }
-    
-    $currentUser = getCurrentUser();
-    if ($currentUser) {
-        error_log("✅ Registered link accessed by user: {$currentUser['username']}");
+        $loginUrl = htmlspecialchars(AUTH_LOGIN_URL, ENT_QUOTES, 'UTF-8');
+        die('🔒 This link requires login. Please <a href="' . $loginUrl . '" style="color: #667eea; text-decoration: underline;">login</a> first to access this file.');
     }
 }
 
@@ -212,75 +238,91 @@ if ($link['link_type'] === 'registered') {
 // ============================================================================
 
 if ($action === 'download') {
-    // Re-check authentication for registered links on actual download
-    if ($link['link_type'] === 'registered') {
+    if (($link['link_type'] ?? 'public') === 'registered') {
         if (!AUTH_ENABLED || !isUserAuthenticated()) {
             http_response_code(403);
             die('🔒 Authentication required for download');
         }
     }
-    
+
     // Verify wait time has passed
     $waitKey = 'wait_' . $token;
-    if (!isset($_SESSION[$waitKey]) || (time() - $_SESSION[$waitKey]) < $link['wait_seconds']) {
+    $waitSeconds = max(0, (int)($link['wait_seconds'] ?? 0));
+    if ($waitSeconds > 0 && (!isset($_SESSION[$waitKey]) || (time() - (int)$_SESSION[$waitKey]) < $waitSeconds)) {
+        http_response_code(429);
         die('⏳ Please wait the required time before downloading');
     }
-    
-    // Construct file path
-    $fileHash = $link['file_hash'];
-    $filePath = base64_decode($fileHash);
-    $rootPath = rtrim($link['root_path'], '/');
-    $fullPath = $rootPath . '/' . $filePath;
-    
-    error_log("📁 Attempting to download: {$fullPath}");
-    
-    if (!file_exists($fullPath) || !is_file($fullPath)) {
-        error_log("❌ File not found: {$fullPath}");
+
+    // Decode and strictly confine file path inside root_path
+    $fileHash = (string)($link['file_hash'] ?? '');
+    $decodedPath = base64_decode($fileHash, true);
+    $rootPath = rtrim((string)($link['root_path'] ?? ''), '/\\');
+
+    if ($decodedPath === false || $decodedPath === '' || $rootPath === '' || strpos($decodedPath, "\0") !== false) {
+        http_response_code(400);
+        die('❌ Invalid file reference');
+    }
+
+    $decodedPath = ltrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $decodedPath), DIRECTORY_SEPARATOR);
+    $realRoot = realpath($rootPath);
+    $realFullPath = realpath($rootPath . DIRECTORY_SEPARATOR . $decodedPath);
+
+    if (!$realRoot || !$realFullPath || !is_file($realFullPath)) {
+        http_response_code(404);
         die('❌ File not found on server');
     }
-    
-    // Log download with user info if authenticated
-    $currentUser = getCurrentUser();
-    $userInfo = $currentUser ? " by user: {$currentUser['username']}" : " (anonymous)";
-    error_log("📥 Download starting: {$link['file_name']}{$userInfo}");
-    
-    // Increment download counter
-    incrementDownload($token, $link);
-    
+
+    $realRootPrefix = rtrim($realRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+    if (strpos($realFullPath, $realRootPrefix) !== 0) {
+        http_response_code(403);
+        die('❌ Access denied');
+    }
+
+    // Atomically check max_downloads and increment counter before streaming
+    $updatedLink = incrementDownload($token);
+    if ($updatedLink === false) {
+        http_response_code(410);
+        die('❌ Download limit reached or link unavailable');
+    }
+
+    $fp = @fopen($realFullPath, 'rb');
+    if ($fp === false) {
+        http_response_code(500);
+        die('❌ Cannot open file');
+    }
+
+    $rawName = basename((string)($link['file_name'] ?? basename($realFullPath)));
+    $asciiFallback = preg_replace('/[^A-Za-z0-9._-]/', '_', $rawName);
+    $utf8Encoded = rawurlencode($rawName);
+
     // Clean all output buffers
-    while (ob_get_level()) ob_end_clean();
-    
-    // Disable compression
-    @ini_set('zlib.output_compression', 0);
+    while (@ob_end_clean());
+
+    @ini_set('zlib.output_compression', '0');
     @ini_set('memory_limit', '-1');
     @ini_set('max_execution_time', '0');
-    
+
     if (function_exists('apache_setenv')) {
-        @apache_setenv('no-gzip', 1);
+        @apache_setenv('no-gzip', '1');
     }
-    
-    // Set headers
+
     header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="' . basename($link['file_name']) . '"');
-    header('Content-Length: ' . filesize($fullPath));
+    header('Content-Disposition: attachment; filename="' . $asciiFallback . '"; filename*=UTF-8\'\'' . $utf8Encoded);
+    header('Content-Length: ' . filesize($realFullPath));
     header('Content-Transfer-Encoding: binary');
     header('Cache-Control: no-cache, must-revalidate');
     header('Pragma: no-cache');
     header('Expires: 0');
-    
-    // Stream file
-    $fp = fopen($fullPath, 'rb');
-    if ($fp === false) {
-        die('❌ Cannot open file');
-    }
-    
-    while (!feof($fp)) {
-        echo fread($fp, 8192);
+
+    while (!feof($fp) && !connection_aborted()) {
+        $buffer = fread($fp, 8192);
+        if ($buffer === false) {
+            break;
+        }
+        echo $buffer;
         flush();
     }
     fclose($fp);
-    
-    error_log("✅ Download completed for: {$link['file_name']}{$userInfo}");
     exit;
 }
 
@@ -290,23 +332,18 @@ if ($action === 'download') {
 
 $_SESSION['wait_' . $token] = time();
 
-// Reload link data
-$link = loadLinkData($token);
+$expiresIn = max(0, (int)$link['expires_at'] - time());
+$expiresMinutes = (int)ceil($expiresIn / 60);
+$fileSizeMB = number_format(((int)$link['file_size']) / 1024 / 1024, 2);
+$waitSeconds = max(0, (int)($link['wait_seconds'] ?? 0));
 
-$expiresIn = $link['expires_at'] - time();
-$expiresMinutes = ceil($expiresIn / 60);
-$fileSizeMB = number_format($link['file_size'] / 1024 / 1024, 2);
-
-// Format expiration date
 $timezone = DISPLAY_TIMEZONE;
-$expiresDate = new DateTime('@' . $link['expires_at']);
+$expiresDate = new DateTime('@' . (int)$link['expires_at']);
 $expiresDate->setTimezone(new DateTimeZone($timezone));
 $expiresFormatted = $expiresDate->format('Y-m-d H:i');
 
-// Check link type for display
-$isRegisteredOnly = ($link['link_type'] === 'registered');
+$isRegisteredOnly = (($link['link_type'] ?? 'public') === 'registered');
 $currentUser = getCurrentUser();
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -317,24 +354,24 @@ $currentUser = getCurrentUser();
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Download: <?= htmlspecialchars($link['file_name']) ?></title>
+    <title>Download: <?= htmlspecialchars($link['file_name'], ENT_QUOTES, 'UTF-8') ?></title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
-        
+
         .dl-page-wrapper {
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: calc(100vh - 40px);
         }
-        
+
         .dl-wrapper {
             background: white;
             max-width: 600px;
@@ -343,13 +380,13 @@ $currentUser = getCurrentUser();
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        
-        .dl-title { 
-            color: #333; 
-            margin-bottom: 10px; 
-            font-size: 28px; 
+
+        .dl-title {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
         }
-        
+
         .dl-user-badge {
             display: inline-block;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -360,7 +397,7 @@ $currentUser = getCurrentUser();
             font-weight: 600;
             margin-bottom: 15px;
         }
-        
+
         .dl-file-info {
             background: #f8f9fa;
             padding: 20px;
@@ -368,16 +405,17 @@ $currentUser = getCurrentUser();
             margin: 25px 0;
             border-left: 4px solid #667eea;
         }
-        
-        .dl-file-info div { 
-            margin: 8px 0; 
-            color: #555; 
+
+        .dl-file-info div {
+            margin: 8px 0;
+            color: #555;
+            word-break: break-word;
         }
-        
-        .dl-file-info strong { 
-            color: #333; 
+
+        .dl-file-info strong {
+            color: #333;
         }
-        
+
         .dl-link-type-badge {
             display: inline-block;
             padding: 4px 10px;
@@ -386,17 +424,17 @@ $currentUser = getCurrentUser();
             font-weight: 600;
             margin-left: 8px;
         }
-        
+
         .dl-link-type-public {
             background: #e3f2fd;
             color: #1976d2;
         }
-        
+
         .dl-link-type-registered {
             background: #fff3e0;
             color: #f57c00;
         }
-        
+
         .dl-countdown {
             font-size: 72px;
             color: #667eea;
@@ -405,14 +443,14 @@ $currentUser = getCurrentUser();
             font-weight: bold;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
         }
-        
-        .dl-status-text { 
-            text-align: center; 
-            color: #666; 
-            margin: 20px 0; 
-            font-size: 16px; 
+
+        .dl-status-text {
+            text-align: center;
+            color: #666;
+            margin: 20px 0;
+            font-size: 16px;
         }
-        
+
         .dl-button {
             display: block;
             width: 100%;
@@ -430,13 +468,13 @@ $currentUser = getCurrentUser();
             border: none;
             cursor: pointer;
         }
-        
+
         .dl-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
             background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
         }
-        
+
         .dl-progress-wrapper {
             width: 100%;
             height: 8px;
@@ -445,35 +483,35 @@ $currentUser = getCurrentUser();
             overflow: hidden;
             margin: 20px 0;
         }
-        
+
         .dl-progress-bar {
             height: 100%;
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
             width: 0%;
             transition: width 1s linear;
         }
-        
-        .dl-footer { 
-            text-align: center; 
-            margin-top: 20px; 
-            color: #666; 
-            font-size: 12px; 
+
+        .dl-footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 12px;
         }
-        
+
         .dl-footer .timezone-info {
             color: #999;
             font-style: italic;
         }
-        
+
         @media (max-width: 768px) {
             .dl-wrapper {
                 padding: 30px 20px;
             }
-            
+
             .dl-title {
                 font-size: 24px;
             }
-            
+
             .dl-countdown {
                 font-size: 56px;
             }
@@ -484,16 +522,16 @@ $currentUser = getCurrentUser();
     <div class="dl-page-wrapper">
         <div class="dl-wrapper">
             <h1 class="dl-title">📥 Download File</h1>
-            
+
             <?php if ($currentUser): ?>
                 <div class="dl-user-badge">
-                    👤 Logged in as: <?= htmlspecialchars($currentUser['username']) ?>
+                    👤 Logged in as: <?= htmlspecialchars($currentUser['username'], ENT_QUOTES, 'UTF-8') ?>
                 </div>
             <?php endif; ?>
-            
+
             <div class="dl-file-info">
                 <div>
-                    <strong>📄 File:</strong> <?= htmlspecialchars($link['file_name']) ?>
+                    <strong>📄 File:</strong> <?= htmlspecialchars($link['file_name'], ENT_QUOTES, 'UTF-8') ?>
                 </div>
                 <div>
                     <strong>🔒 Access Type:</strong>
@@ -504,53 +542,64 @@ $currentUser = getCurrentUser();
                     <?php endif; ?>
                 </div>
                 <div><strong>💾 Size:</strong> <?= $fileSizeMB ?> MB</div>
-                <div><strong>📊 Downloads:</strong> <?= $link['download_count'] ?><?= $link['max_downloads'] > 0 ? ' / ' . $link['max_downloads'] : '' ?></div>
+                <div><strong>📊 Downloads:</strong> <?= (int)$link['download_count'] ?><?= (int)$link['max_downloads'] > 0 ? ' / ' . (int)$link['max_downloads'] : '' ?></div>
                 <div><strong>⏰ Expires in:</strong> <?= $expiresMinutes ?> minutes</div>
             </div>
-            
+
             <p class="dl-status-text">⏳ Please wait while we prepare your download...</p>
-            
+
             <div class="dl-progress-wrapper">
                 <div class="dl-progress-bar" id="dlProgressBar"></div>
             </div>
-            
-            <div class="dl-countdown" id="dlTimer"><?= $link['wait_seconds'] ?></div>
-            
-            <a href="?t=<?= htmlspecialchars($token) ?>&action=download" 
-               class="dl-button" 
-               id="dlButton" 
+
+            <div class="dl-countdown" id="dlTimer"><?= $waitSeconds ?></div>
+
+            <a href="?t=<?= htmlspecialchars($token, ENT_QUOTES, 'UTF-8') ?>&action=download"
+               class="dl-button"
+               id="dlButton"
                style="display: none;">
                 ⬇️ Download Now
             </a>
-            
+
             <div class="dl-footer">
-                Secure download • Expires <strong><?= $expiresFormatted ?></strong> <span class="timezone-info">(<?= $timezone ?>)</span>
+                Secure download • Expires <strong><?= htmlspecialchars($expiresFormatted, ENT_QUOTES, 'UTF-8') ?></strong> <span class="timezone-info">(<?= htmlspecialchars($timezone, ENT_QUOTES, 'UTF-8') ?>)</span>
             </div>
         </div>
     </div>
-    
+
     <script>
-        let timeLeft = <?= $link['wait_seconds'] ?>;
-        const totalTime = timeLeft;
-        const timerEl = document.getElementById('dlTimer');
-        const downloadBtn = document.getElementById('dlButton');
-        const progressBar = document.getElementById('dlProgressBar');
-        const statusText = document.querySelector('.dl-status-text');
-        
-        const countdown = setInterval(() => {
-            timeLeft--;
-            timerEl.textContent = timeLeft;
-            progressBar.style.width = ((totalTime - timeLeft) / totalTime * 100) + '%';
-            
-            if (timeLeft <= 0) {
-                clearInterval(countdown);
+        (function () {
+            let timeLeft = <?= $waitSeconds ?>;
+            const totalTime = timeLeft;
+            const timerEl = document.getElementById('dlTimer');
+            const downloadBtn = document.getElementById('dlButton');
+            const progressBar = document.getElementById('dlProgressBar');
+            const statusText = document.querySelector('.dl-status-text');
+
+            function showReady() {
                 timerEl.textContent = '✅';
                 timerEl.style.color = '#28a745';
                 progressBar.style.width = '100%';
                 downloadBtn.style.display = 'block';
                 statusText.textContent = '✅ Ready to download!';
             }
-        }, 1000);
+
+            if (timeLeft <= 0) {
+                showReady();
+                return;
+            }
+
+            const countdown = setInterval(function () {
+                timeLeft--;
+                timerEl.textContent = Math.max(0, timeLeft);
+                progressBar.style.width = (((totalTime - timeLeft) / totalTime) * 100) + '%';
+
+                if (timeLeft <= 0) {
+                    clearInterval(countdown);
+                    showReady();
+                }
+            }, 1000);
+        })();
     </script>
 </body>
 </html>
