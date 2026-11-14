@@ -8,35 +8,23 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    
     permissions:
       contents: read
       id-token: write
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-      
+          node-version: '24'
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Build (minify)
         run: npm run minify
-      
-      # ✅ First try: Provenance
-      - name: Publish with Provenance
-        id: publish_provenance
-        continue-on-error: true
-        run: npm publish --provenance --access public
-      
-      # ✅ Fallback: use token (if it is the first pubblication)
-      - name: Publish with Token (first time only)
-        if: steps.publish_provenance.outcome == 'failure'
+
+      - name: Publish to npm
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
