@@ -1,3 +1,4 @@
+<!-- README.md -->
 # My File Manager Opensource
 
 <div align="center">
@@ -46,6 +47,7 @@
   - [End-to-End Encryption](#end-to-end-encryption)
   - [Custom Authentication](#custom-authentication)
   - [Token-Based Security](#token-based-security)
+  - [Server-Side Hardening](#server-side-hardening)
 - [Customization](#customization)
   - [Custom Menus and Context Menus](#custom-menus-and-context-menus)
   - [Custom Icons](#custom-icons)
@@ -61,17 +63,17 @@
 
 ## Overview
 
-**My File Manager** is a powerful, open-source web-based file manager built with vanilla JavaScript and PHP. It provides a modern user interface similar to desktop file managers, with advanced features like end-to-end encryption, chunked file uploads, plugin architecture, and extensive customization options.
+**My File Manager** is a powerful, open-source web-based file manager built with vanilla JavaScript and PHP. It provides a modern user interface similar to desktop file managers, with advanced features like end-to-end encryption, sequential chunked file uploads, streaming downloads, plugin architecture, and extensive customization options.
 
 ### Why Choose My File Manager?
 
-- 🔐 **Security First**: Built-in encryption, authentication, and comprehensive security validations
-- 🚀 **Modern Architecture**: Vanilla JavaScript (no dependencies), modular PHP backend
-- 🔌 **Plugin System**: Extensible with both JavaScript and PHP plugins
+- 🔐 **Security First**: Built-in encryption, Bearer token authentication, strict path confinement, and comprehensive server-side validations
+- 🚀 **Modern Architecture**: Vanilla JavaScript (no framework dependencies), modular PHP backend
+- 🔌 **Plugin System**: Extensible with both JavaScript and PHP plugins (Text Editor, Image Editor, Video Editor, Public Links, ClamAV, FTP)
 - 🎨 **Fully Customizable**: Themes, icons, menus, branding
 - 📱 **Responsive Design**: Works seamlessly on desktop, tablet, and mobile
-- 🌍 **Multilingual**: Built-in i18n support with easy translation
-- ⚡ **Performance Optimized**: Chunked uploads for large files, efficient file handling
+- 🌍 **Multilingual**: Built-in i18n support with 18 languages
+- ⚡ **Performance Optimized**: Streaming chunked uploads/merges, low-memory handling, efficient file operations
 
 ---
 ## Screenshot
@@ -83,29 +85,31 @@
 ### Core Features
 
 - **File Operations**: Upload, download, delete, rename, copy, cut, paste, create folders
-- **Advanced Upload**: Chunked upload for large files with progress tracking
-- **File Preview**: Built-in viewers for images and text files
-- **Search**: Fast file search with recursive directory scanning
-- **Trash System**: Soft delete with restore functionality
-- **Drag & Drop**: Intuitive drag-and-drop file operations
-- **Keyboard Shortcuts**: Efficient navigation with keyboard support
-- **Multi-selection**: Select multiple files with Ctrl/Shift/Cmd
+- **Advanced Upload**: Sequential chunked upload queue for large files with smoothed speed/ETA progress tracking
+- **Streaming Download**: Real-time download progress modal with cancellation support
+- **File Editing**: Built-in editors for text files, raster images, and videos
+- **Public Share Links**: Generate expiring download links with optional wait timers, download caps, and registered-user restrictions
+- **Search**: Fast debounced file search with recursive directory scanning
+- **Trash System**: Soft delete preserving relative paths with restore and empty-trash functionality
+- **Drag & Drop**: Intuitive drag-and-drop file uploads
+- **Keyboard Shortcuts**: Efficient navigation (Arrow keys, Enter, Backspace, first-letter cycling, Ctrl+C/X/V/A, F2, F5, Del)
+- **Multi-selection**: Select multiple files with Ctrl/Shift/Cmd range selection
 - **Context Menu**: Right-click context menus for quick actions
-- **Breadcrumb Navigation**: Easy directory navigation with clickable breadcrumbs
+- **Breadcrumb Navigation**: Easy UTF-8 safe directory navigation with clickable breadcrumbs
 - **List/Grid View**: Toggle between list and grid view modes
-- **Sorting**: Sort by name, size, date, or type
-- **Quota Management**: Display storage usage and limits
+- **Sorting**: Sort ascending/descending by name, size, date, or type
+- **Quota Management**: Display storage usage, free space, total quota, and max upload size
 
 ### Security Features
 
-- **End-to-End Encryption**: AES-256-GCM encryption with WebCrypto API
+- **End-to-End Encryption**: AES-256-GCM (WebCrypto) with per-file random salt (`MFMENC01` header) and PBKDF2 (100,000 iterations), plus CryptoJS CTR+HMAC-SHA256 fallback (loaded via SRI without `eval`)
 - **Custom Authentication**: Flexible authentication system with callbacks
-- **Token-Based Security**: JWT-like token authentication with HMAC-SHA256
-- **IP Whitelist**: Restrict access by IP address
-- **Extension Filtering**: Block dangerous file extensions
-- **MIME Type Validation**: Server-side MIME type verification
-- **Path Traversal Protection**: Secure path resolution
-- **XSS Protection**: Sanitized inputs and outputs
+- **Token-Based Security**: HMAC-SHA256 tokens sent via `Authorization: Bearer` header and POST body (never leaked in URL query strings)
+- **IP Whitelist & CORS Allowlist**: Restrict access by IP address and validate cross-origin requests strictly
+- **Extension & MIME Filtering**: Server-side filename sanitization, trailing-dot/compound extension blocking, and `finfo` MIME validation
+- **Strict Path & Symlink Protection**: `realpath()` confinement checks across all file operations, chunk uploads, and public links
+- **Antivirus Integration**: Optional ClamAV daemon (`clamdscan`) scanning on uploaded files
+- **XSS & Header Injection Protection**: Escaped UI rendering, URL protocol validation, and RFC 5987 download headers
 
 ### Advanced Features
 
@@ -113,8 +117,8 @@
 - **Custom Menus**: Add custom menu items and context menu entries
 - **Brand Customization**: Add your logo and customize the appearance
 - **Custom Icons**: Replace default icons with your own PNG files
-- **Internationalization**: Multi-language support (English, Italian, Spanish, German, French, Portuguese, Chinese, Japanese, Russian)
-- **Auto-Refresh**: Optional automatic file list refresh
+- **Internationalization**: Multi-language support (18 languages)
+- **Auto-Refresh**: Optional automatic refresh (automatically pauses when tab is hidden, searching, or transferring files)
 - **Hidden Files**: Show/hide hidden files (dotfiles)
 - **Custom File Opener**: Override default file open behavior
 
@@ -126,10 +130,10 @@
 
 - **PHP**: 7.4 or higher (8.0+ recommended)
 - **PHP Extensions**:
-  - `fileinfo` (for MIME type detection)
-  - `mbstring` (for filename handling)
-  - `openssl` (for encryption)
-- **Web Server**: 
+  - `fileinfo` (for reliable MIME type detection)
+  - `mbstring` (for UTF-8 filename handling)
+  - `openssl` / `json` (for crypto/token/JSON handling)
+- **Web Server**:
   - **Linux/Unix**: Apache (with mod_rewrite), Nginx, LiteSpeed, Others
   - **Windows**: IIS, Apache (XAMPP/WAMP), Nginx
   - **macOS**: Apache (MAMP/Homebrew), Nginx (Valet), Docker
@@ -139,7 +143,7 @@
 
 - **Modern Browser**: Chrome 90+, Firefox 88+, Safari 14+, Edge 90+
 - **JavaScript**: Enabled
-- **WebCrypto API**: For encryption features (supported by all modern browsers)
+- **WebCrypto API**: Recommended for hardware-accelerated encryption (requires HTTPS or `localhost`)
 
 ---
 
@@ -159,35 +163,39 @@ Ensure your directory structure matches:
 ```
 my-file-manager-opensource/
 ├── js/
-│   ├── i18n.js                          # Internationalization translations
-│   ├── myfilemanager.js                 # Core file manager JavaScript
-│   ├── i18n.min.js                      # Internationalization translations - Minifed ready for production
-│   ├── myfilemanager.min.js             # Core file manager JavaScript - Minifed ready for production
+│   ├── i18n.js                           # Internationalization translations
+│   ├── myfilemanager.js                  # Core file manager JavaScript
+│   ├── i18n.min.js                       # Minified i18n (production)
+│   ├── myfilemanager.min.js              # Minified core JS (production)
 │   └── plugins/
 │       ├── myfilemanager-image-editor.js # Image editor plugin
 │       ├── myfilemanager-text-editor.js  # Text editor plugin
-│       ├── myfilemanager-video-editor.js  # Text editor plugin
+│       ├── myfilemanager-video-editor.js # Video editor plugin
+│       ├── public-link-plugin.js         # Public links generator & manager plugin
 │       └── [your-custom-plugins].js      # Your custom plugins
 ├── css/
-│   └── myfilemanager.css                # Core styles
-│   └── myfilemanager.min.css            # Core styles - Minifed ready for production
+│   ├── myfilemanager.css                 # Core styles
+│   └── myfilemanager.min.css             # Minified styles (production)
 ├── src/
-│   ├── connector.php                    # Main API endpoint
-│   ├── .htaccess                        # .htaccess for security with apache2 webserver (ready for production)
-│   ├── nginx.conf.example               # nginx.conf for an example configuration with nginx webserver
-│   ├── myfilemanager.php                # File manager core class
-│   ├── chunkuploader.php                # Chunked upload handler
-│   ├── security.php                     # Security utilities
+│   ├── connector.php                     # Main API endpoint
+│   ├── .htaccess                         # Apache security rules
+│   ├── nginx.conf.example                # Example Nginx configuration
+│   ├── myfilemanager.php                 # File manager core class
+│   ├── chunkuploader.php                 # Chunked upload handler
+│   ├── security.php                      # Security utilities
 │   └── plugins/
-│       ├── plugininterface.php          # Plugin interface
-│       ├── ftpplugin.php                # FTP plugin
-│       ├── rate_limiter.php             # Rate limit for video editor plugin
-│       ├── video_editor.php             # Video editor plugin
-│       └── [your-custom-plugins].php    # Your custom plugins
-├── assets/                              # PNG icon files and other static assets
-├── files/                               # Default file storage directory
-├── package.json                         # NPM package info (optional)
-└── README.md                            # This file
+│       ├── plugininterface.php           # Plugin interface
+│       ├── clamav.php                    # ClamAV antivirus scanner plugin
+│       ├── ftpplugin.php                 # FTP/FTPS storage plugin
+│       ├── publiclinks.php               # Public links backend plugin
+│       ├── rate_limiter.php              # Rate limiter for video editor
+│       ├── video_editor.php              # FFmpeg video processor plugin
+│       └── [your-custom-plugins].php     # Your custom plugins
+├── download.php                          # Standalone public link download endpoint
+├── assets/                               # PNG icon files and other static assets
+├── files/                                # Default file storage directory
+├── package.json                          # NPM package info (optional)
+└── README.md                             # This file
 ```
 
 #### Apache (Linux/Windows/macOS)
@@ -196,29 +204,24 @@ Only `connector.php` is accessible via HTTP.
 
 #### Nginx (Linux/macOS)
 Add the configuration from `src/nginx.conf.example` to your server block:
-`sudo nano /etc/nginx/sites-available/your-site`
-Add the location block from nginx.conf.example
-`sudo nginx -t
-sudo systemctl reload nginx`
+```bash
+sudo nano /etc/nginx/sites-available/your-site
+# Add the location block from nginx.conf.example
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
 #### Windows IIS
-IIS doesn't support file-level access control without additional modules, you could made a web.config file but you need url rewrite module to make it work.
+IIS doesn't support `.htaccess` file-level access control without additional modules.
 
 **Recommended solution:**
-Move `connector.php` outside the `/src/` folder.
-
-Update paths in `connector.php`.
-
-Then in IIS Manager, deny access to the `/src/` folder.
+Move `connector.php` outside the `/src/` folder, update its `require_once` paths, and deny direct HTTP access to `/src/` in IIS Manager.
 
 ### 3. Set Permissions
 
 ```bash
 # Create file storage directory
 mkdir -p files
-chmod 755 files
-
-# Set permissions for upload directory (adjust based on your server)
 chown www-data:www-data files
 chmod 750 files
 ```
@@ -229,39 +232,25 @@ Edit `src/connector.php` to configure your file manager:
 
 ```php
 <?php
-require_once 'myfilemanager.php';
-require_once 'chunkuploader.php';
-require_once 'security.php';
-...
-// Your configuration
-$PATHTOFILES = __DIR__ . '/../files/';  // Absolute path to file storage
-// Verify if exist
-    if (!is_dir($PATHTOFILES)) {
-        mkdir($PATHTOFILES, 0755, true);
-        error_log("Created files folder: {$PATHTOFILES}");
-    }
-    // Configuration array
-    $config = [
-        // Root path for file operations
-        'rootPath' => $PATHTOFILES,
-        
-        // URL path for accessing files, this url automatically adds the file name after it with a querystring ?filename=... it is usefull for custom download scripts
-        'rootUrl' => '', // https://... or leave blank to use the default
-        
-        // Maximum quota (supports units: B, KB, MB, GB, TB, PB)
-        // Examples: 5368709120, "5GB", "5000MB"
-        // Default (without unit) is bytes
-        'maxQuota' => parseFileSize('5GB'),
-    
-        // Maximum file size for upload (supports units: B, KB, MB, GB, TB, PB)
-        // Examples: 524288000, "500MB", "0.5GB"
-        // Default (without unit) is bytes
-        'maxFileSize' => parseFileSize('0.5GB'),
-        
-        // Allowed mime types
-        'allowedMimeTypes' => ['image/*', 'video/*', 'audio/*', 'text/*', 'application/pdf', 'text/plain'],
-...
-// See Configuration Options section for full config
+require_once __DIR__ . '/myfilemanager.php';
+require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/chunkuploader.php';
+
+$PATHTOFILES = __DIR__ . '/../files/'; // Absolute path to file storage
+if (!is_dir($PATHTOFILES)) {
+    mkdir($PATHTOFILES, 0750, true);
+}
+
+$config = [
+    'rootPath' => $PATHTOFILES,
+    'rootUrl' => '',
+    'maxQuota' => parseFileSize('5GB'),
+    'maxFileSize' => parseFileSize('0.5GB'),
+
+    // Important: include 'application/octet-stream' if client-side encryption (cryptFiles) is enabled
+    'allowedMimeTypes' => ['image/*', 'video/*', 'audio/*', 'text/*', 'application/pdf', 'text/plain'],
+    // ...
+];
 ```
 
 ### 5. Install Dependencies (Optional)
@@ -299,10 +288,11 @@ Create an HTML file with the file manager:
     <script src="js/i18n.js"></script>
     <script src="js/myfilemanager.js"></script>
 
-    <!-- Load Javascript Plugins (Optional) -->
+    <!-- Load JavaScript Plugins (Optional) -->
     <script src="js/plugins/myfilemanager-text-editor.js"></script>
     <script src="js/plugins/myfilemanager-image-editor.js"></script>
     <script src="js/plugins/myfilemanager-video-editor.js"></script>
+    <script src="js/plugins/public-link-plugin.js"></script>
 
     <!-- Initialize File Manager -->
     <script>
@@ -328,31 +318,31 @@ The following table lists all available options when initializing the file manag
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `url` | String | `/connector.php` | Backend API endpoint URL |
-| `downloadUrl` | String | `null` | Custom download URL (leave it blank to use direct file download script) |
-| `token` | String | `null` | Authentication token for API requests |
-| `lang` | String | Browser language | UI language (`en`, `it`, `es`, `de`, `fr`, `pt`, `zh`, `ja`, `ru`) |
+| `downloadUrl` | String | `null` | Custom download URL (leave `null` to use connector) |
+| `token` | String | `null` | Authentication token sent via `Authorization: Bearer` header and POST body |
+| `lang` | String | Browser language | UI language (`en`, `it`, `es`, `de`, `fr`, `pt`, `zh`, `ja`, `ru`, `ar`, `hi`, `ko`, `nl`, `tr`, `pl`, `sv`, `el`, `vi`) |
 | `viewMode` | String | `list` | Default view mode (`list` or `grid`) |
 | `theme` | String | `light` | UI theme (`light` or `dark`) |
 | `maxFileSize` | Number | `524288000` | Maximum file size in bytes (500MB) |
 | `chunkSize` | Number | `1048576` | Chunk size for uploads in bytes (1MB) |
-| `trashPath` | String | `.trash` | Trash folder name (relative to root) - it is reccomended to not change it |
+| `trashPath` | String | `.trash` | Trash folder name (relative to root) - recommended not to change |
 | `debug` | Boolean | `false` | Enable console debug messages |
 | `brandLogo` | String | `null` | URL to brand logo image |
 | `brandLink` | String | `null` | Link URL when clicking logo |
 | `brandTarget` | String | `_blank` | Link target (`_blank`, `_self`, etc.) |
 | `homeLabel` | String | `Home` | Label for home/root directory |
-| `cryptFiles` | Boolean | `false` | Enable client-side encryption |
-| `encryptionKey` | CryptoKey | `null` | Encryption key (derived from password) - if not provided the key will be asked to the user (end-to-end encryption) |
+| `cryptFiles` | Boolean | `false` | Enable client-side encryption (requires `'application/octet-stream'` in PHP `allowedMimeTypes`) |
+| `encryptionKey` | CryptoKey | `null` | Pre-derived encryption key (if omitted, user can set password via File menu) |
 | `encryptionSalt` | Uint8Array | `null` | Salt for key derivation |
 | `cryptExclude` | Array | `[]` | MIME patterns to exclude from encryption (e.g., `['video/*', 'audio/*']`) |
 | `showUrlOnProperties` | Boolean | `false` | Show file URL in properties dialog |
 | `showHidden` | Boolean | `false` | Show hidden files (starting with `.`) |
 | `sortBy` | String | `name` | Default sort field (`name`, `size`, `date`, `type`) |
 | `sortOrder` | String | `asc` | Default sort order (`asc` or `desc`) |
-| `autoRefresh` | Boolean/Number | `false` | Auto-refresh interval in seconds (e.g., `30`) |
-| `hideExtensions` | Array | `[]` | File extensions hided from the view |
-| `banExtensions` | Array | See below | File extensions blocked for upload/rename (see below) |
-| `features` | Object | All enabled | Enable/disable specific features (read below) |
+| `autoRefresh` | Boolean/Number | `false` | Auto-refresh interval in milliseconds (e.g., `30000` for 30s) |
+| `hideExtensions` | Array | `[]` | File extensions hidden from the view (e.g., `['.tmp', '.log']`) |
+| `banExtensions` | Array | See below | File extensions blocked for upload/rename |
+| `features` | Object | All enabled | Enable/disable specific features (deep-merged with defaults) |
 | `customMenus` | Array | `[]` | Custom menu items in menu bar |
 | `customContextMenu` | Array | `[]` | Custom context menu entries |
 | `onInit` | Function | `null` | Callback when file manager initializes |
@@ -363,12 +353,12 @@ The following table lists all available options when initializing the file manag
 | `onFileOpen` | Function | `null` | Callback when file is opened |
 | `onFileSelect` | Function | `null` | Callback when file is selected |
 | `onError` | Function | `null` | Callback on error |
-| `onChange` | Function | `null` | Callback on any state change |
-| `customFileOpener` | Function | `null` | Custom file open handler (what happens when double click any files) |
+| `onChange` | Function | `null` | Callback on directory open/refresh |
+| `customFileOpener` | Function | `null` | Custom file open handler (overrides default download on double-click/Enter) |
 
 #### Default Banned Extensions
 
-For security purposes, the following extensions are blocked by default (you can customize it for your needs but remember to customize it in both php and javascript):
+For security purposes, the following extensions are blocked by default (customize according to your needs and keep `connector.php` synchronized):
 
 ```javascript
 banExtensions: [
@@ -427,17 +417,32 @@ $config = [
     'rootUrl' => '/files/',
 
     // Quota settings
-    'maxQuota' => '5GB',           // User storage quota
-    'maxFileSize' => '500MB',      // Max single file size
+    'maxQuota' => parseFileSize('5GB'),      // User storage quota
+    'maxFileSize' => parseFileSize('500MB'), // Max single file size
+
+    // Folder access policies
+    'readOnlyFolders' => ['.trash', 'system', 'config'],
+    'protectedFolders' => ['.trash', 'uploads', 'backup'],
+    'quotaExcludedFolders' => ['backup'],
+    'uploadBlockedFolders' => ['backup'],
 
     // Allowed MIME types (wildcard supported)
+    // Add 'application/octet-stream' if JS client-side encryption (cryptFiles) is enabled
     'allowedMimeTypes' => [
-        'image/*', 'video/*', 'audio/*', 
-        'text/*', 'application/pdf'
+        'image/*', 'video/*', 'audio/*',
+        'text/*', 'application/pdf', 'text/plain'
     ],
 
-    // Banned extensions (same as JavaScript)
-    'banExtensions' => ['php', 'exe', 'sh', ...],
+    // Banned extensions (keep in sync with JavaScript)
+    'banExtensions' => ['php', 'phar', 'exe', 'sh', ...],
+
+    // Per-extension granular permissions
+    'extensionRestrictions' => [
+        'log' => ['read' => true, 'write' => false, 'open' => false, 'delete' => false]
+    ],
+    'defaultExtensionPermissions' => [
+        'read' => true, 'write' => true, 'open' => true, 'delete' => true
+    ],
 
     // Disabled operations
     'disabledOperations' => [], // e.g., ['delete', 'rename']
@@ -447,83 +452,85 @@ $config = [
 
     // Trash functionality
     'enableTrash' => true,
-    'trashPath' => $config['rootPath'] . '.trash/',
+    'trashPath' => $PATHTOFILES . '.trash/',
 
     // Security settings
     'security' => [
         'enableTokenAuth' => false,
-        'tokenSecret' => 'your-secret-key',
+        'tokenSecret' => 'your-long-random-secret-key',
         'enableIPWhitelist' => false,
         'allowedIPs' => ['127.0.0.1'],
+        'allowedOrigins' => [], // Explicit CORS origins (empty = same-origin only)
     ],
 
     // Custom authentication callback
     'authCallback' => function() {
-        // Your authentication logic
         return [
             'id' => 'user123',
             'username' => 'john_doe',
             'quota' => 5368709120, // bytes
             'permissions' => [
-                'read', 'write', 'delete', 'upload', 
-                'download', 'rename', 'copy', 'move', 
+                'read', 'write', 'delete', 'upload',
+                'download', 'rename', 'copy', 'move',
                 'mkdir', 'search', 'quota', 'info'
             ]
         ];
     },
 
-    // Plugins
-    'plugins' => []
+    // Plugins configuration
+    'plugins' => [
+        'clamav' => ['enabled' => false, 'clamdscan_path' => '/usr/bin/clamdscan'],
+        'rate_limiter' => ['enabled' => false],
+        'video_editor' => ['enabled' => false, 'ffmpeg_path' => '/usr/bin/ffmpeg'],
+        'ftpplugin' => ['enabled' => false],
+        'publiclinks' => ['enabled' => false]
+    ]
 ];
 ```
-The authentication script, in production use, can also be integrated with a database variable or a session
+
+In production, `authCallback` can be integrated with variables or PHP sessions:
 
 Variables:
+```php
+'authCallback' => function() use ($userId, $username, $userQuota) {
+    return [
+        'id' => $userId,
+        'username' => $username,
+        'quota' => $userQuota,
+        'permissions' => [
+            'read', 'write', 'delete', 'upload',
+            'download', 'rename', 'copy', 'move',
+            'mkdir', 'search', 'quota', 'info'
+        ]
+    ];
+}
 ```
-// Custom authentication callback - Version with USE
-    'authCallback' => function() use ($userId, $username, $userQuota) {
-        // Variable are already available with 'use'
-        return [
-            'id' => $userId,
-            'username' => $username,
-            'quota' => $userQuota,
-            'permissions' => [
-                'read', 'write', 'delete', 'upload', 
-                'download', 'rename', 'copy', 'move', 
-                'mkdir', 'search', 'quota', 'info'
-            ]
-        ];
-    }
-```
+
 Session:
-```
-    // Custom authentication callback - Version with SESSION (remember to start the session before use it)
-    'authCallback' => function() {
-        // check if user is authenticated
-        if (!isset($_SESSION['user_id'])) {
-            return false; // Not authenticated
-        }
-        
-        // Read data from session
-        return [
-            'id' => $_SESSION['user_id'],
-            'username' => $_SESSION['username'],
-            'quota' => $_SESSION['user_quota'] ?? 5368709120, // Default 5GB
-            'permissions' => [
-                'read', 'write', 'delete', 'upload', 
-                'download', 'rename', 'copy', 'move', 
-                'mkdir', 'search', 'quota', 'info'
-            ]
-        ];
+```php
+'authCallback' => function() {
+    if (!isset($_SESSION['user_id'])) {
+        return false; // Not authenticated
     }
+
+    return [
+        'id' => $_SESSION['user_id'],
+        'username' => $_SESSION['username'],
+        'quota' => $_SESSION['user_quota'] ?? 5368709120,
+        'permissions' => [
+            'read', 'write', 'delete', 'upload',
+            'download', 'rename', 'copy', 'move',
+            'mkdir', 'search', 'quota', 'info'
+        ]
+    ];
+}
 ```
+
 ---
 
 ## Embedding in HTML
 
 ### Basic Embedding
-
-The simplest way to embed the file manager:
 
 ```html
 <div id="filemanager" style="height: 600px;"></div>
@@ -548,28 +555,16 @@ The simplest way to embed the file manager:
         viewMode: 'grid',
         brandLogo: 'assets/logo.png',
         brandLink: 'https://yoursite.com',
-        cryptFiles: true, // Enable encryption
+        cryptFiles: true,
         showHidden: true,
         autoRefresh: 30000, // Refresh every 30 seconds
 
-        // Custom menu items
-        customMenus: [
-            {
-                label: 'My Custom Action',
-                icon: '⚙️',
-                action: function(fm) {
-                    alert('Custom action executed!');
-                }
-            }
-        ],
-
-        // Event callbacks
-        onFileSelect: function(files) {
-            console.log('Selected files:', files);
+        onFileSelect: function(file) {
+            console.log('Selected file:', file);
         },
 
-        onUploadComplete: function(file) {
-            console.log('Upload complete:', file);
+        onUploadComplete: function(data) {
+            console.log('Upload complete:', data.file);
         }
     });
 </script>
@@ -603,8 +598,6 @@ The simplest way to embed the file manager:
 
 ### Multiple Instances
 
-You can embed multiple file managers on the same page:
-
 ```html
 <div id="filemanager1" style="height: 400px;"></div>
 <div id="filemanager2" style="height: 400px;"></div>
@@ -626,123 +619,119 @@ You can embed multiple file managers on the same page:
 
 ### Core Methods
 
-#### `open(path)`
-Open a directory.
+#### `open(target)`
+Open a directory by base64 hash (empty string for root).
 
 ```javascript
 fm.open(''); // Open root directory
-fm.open('L3N1YmZvbGRlcg=='); // Open subdirectory (base64 hash)
+fm.open('c3ViZm9sZGVy'); // Open subdirectory
 ```
 
 #### `refresh()`
-Refresh the current directory.
+Refresh the current directory while preserving current selection where possible.
 
 ```javascript
 fm.refresh();
 ```
 
-#### `upload(files)`
-Upload files programmatically.
+#### `uploadFiles(fileList)`
+Enqueue and upload files sequentially.
 
 ```javascript
 var fileInput = document.getElementById('myFileInput');
-fm.upload(fileInput.files);
+fm.uploadFiles(fileInput.files);
 ```
 
-#### `download(files)`
-Download selected files.
+#### `downloadSelected()` / `downloadFile(file)`
+Download currently selected files or a single file object.
 
 ```javascript
-fm.download(fm.getSelectedFiles());
+fm.downloadSelected();
 ```
 
-#### `delete(files)`
-Delete files/folders.
+#### `deleteSelected()`
+Delete currently selected files/folders (moves to trash or deletes permanently if inside trash).
 
 ```javascript
-fm.delete(fm.getSelectedFiles());
+fm.deleteSelected();
 ```
 
-#### `rename(file, newName)`
-Rename a file or folder.
+#### `renameSelected()`
+Prompt and rename the currently selected item.
 
 ```javascript
-fm.rename(file, 'newname.txt');
+fm.renameSelected();
 ```
 
-#### `copy(files, destination)`
-Copy files to destination.
+#### `copySelected()` / `cutSelected()` / `pasteClipboard()`
+Clipboard file operations.
 
 ```javascript
-fm.copy(selectedFiles, destinationHash);
+fm.copySelected();
+fm.pasteClipboard();
 ```
 
-#### `cut(files, destination)`
-Move files to destination.
+#### `createFolder()`
+Prompt and create a new directory in the current path.
 
 ```javascript
-fm.cut(selectedFiles, destinationHash);
+fm.createFolder();
 ```
 
-#### `mkdir(name)`
-Create a new directory.
-
-```javascript
-fm.mkdir('New Folder');
-```
-
-#### `search(query)`
-Search for files.
-
-```javascript
-fm.search('document');
-```
-
-#### `getSelectedFiles()`
-Get currently selected files.
-
-```javascript
-var selected = fm.getSelectedFiles();
-console.log(selected);
-```
-
-#### `selectAll()`
-Select all files in current directory.
+#### `selectAll()` / `clearSelection()`
+Select all or clear selection in the current directory.
 
 ```javascript
 fm.selectAll();
-```
-
-#### `deselectAll()`
-Deselect all files.
-
-```javascript
-fm.deselectAll();
+fm.clearSelection();
 ```
 
 #### `setViewMode(mode)`
-Change view mode.
+Change view mode (`'list'` or `'grid'`).
 
 ```javascript
-fm.setViewMode('grid'); // or 'list'
+fm.setViewMode('grid');
 ```
 
-#### `setTheme(theme)`
-Change theme.
+#### `setSortBy(sortBy)`
+Sort items (`'name'`, `'size'`, `'date'`, `'type'`). Calling again toggles ascending/descending order.
 
 ```javascript
-fm.setTheme('dark'); // or 'light'
+fm.setSortBy('date');
+```
+
+#### `setEncryptionKey(password)`
+Derive and activate client-side encryption from a user password.
+
+```javascript
+fm.setEncryptionKey('my-strong-passphrase');
+```
+
+#### `applyTheme()`
+Re-apply theme class after updating `fm.options.theme`.
+
+```javascript
+fm.options.theme = 'dark';
+fm.applyTheme();
+```
+
+#### `startAutoRefresh(intervalMs)` / `stopAutoRefresh()`
+Control automatic refresh polling.
+
+```javascript
+fm.startAutoRefresh(30000);
+fm.stopAutoRefresh();
 ```
 
 #### `registerPlugin(plugin)`
-Register a custom plugin.
+Register a plugin configuration object.
 
 ```javascript
-fm.registerPlugin(MyCustomPlugin);
+fm.registerPlugin(myPluginObject);
 ```
 
 #### `destroy()`
-Destroy file manager instance.
+Destroy file manager instance, abort active transfers, release WakeLock, and remove document event listeners.
 
 ```javascript
 fm.destroy();
@@ -754,17 +743,17 @@ fm.destroy();
 Called when file manager initializes.
 
 ```javascript
-onInit: function(fm) {
+onInit: function() {
     console.log('File manager initialized');
 }
 ```
 
 #### `onFileSelect`
-Called when files are selected.
+Called when a file is selected.
 
 ```javascript
-onFileSelect: function(files) {
-    console.log('Selected:', files);
+onFileSelect: function(file) {
+    console.log('Selected:', file);
 }
 ```
 
@@ -778,29 +767,29 @@ onFileOpen: function(file) {
 ```
 
 #### `onUploadStart`
-Called when upload starts.
+Called when an upload begins.
 
 ```javascript
-onUploadStart: function(files) {
-    console.log('Starting upload:', files);
+onUploadStart: function(data) {
+    console.log('Starting upload:', data.file.name);
 }
 ```
 
 #### `onUploadProgress`
-Called during upload progress.
+Called periodically during chunked upload.
 
 ```javascript
 onUploadProgress: function(progress) {
-    console.log('Progress:', progress + '%');
+    console.log('Progress:', progress.percent + '%', progress.loaded, '/', progress.total);
 }
 ```
 
 #### `onUploadComplete`
-Called when upload completes.
+Called when an upload finishes.
 
 ```javascript
-onUploadComplete: function(file) {
-    console.log('Upload complete:', file);
+onUploadComplete: function(data) {
+    console.log('Upload complete:', data.file, data.response);
 }
 ```
 
@@ -808,13 +797,13 @@ onUploadComplete: function(file) {
 Called on upload error.
 
 ```javascript
-onUploadError: function(error) {
-    console.error('Upload error:', error);
+onUploadError: function(data) {
+    console.error('Upload error:', data.error);
 }
 ```
 
 #### `onError`
-Called on any error.
+Called on any API/manager error.
 
 ```javascript
 onError: function(error) {
@@ -823,11 +812,11 @@ onError: function(error) {
 ```
 
 #### `onChange`
-Called on any state change.
+Called when directory contents load or refresh.
 
 ```javascript
-onChange: function(state) {
-    console.log('State changed:', state);
+onChange: function(response) {
+    console.log('Current directory:', response.cwd);
 }
 ```
 
@@ -837,7 +826,7 @@ onChange: function(state) {
 
 ### Creating Custom JavaScript Plugins
 
-JavaScript plugins extend the file manager's functionality on the client side. Here's a comprehensive guide:
+JavaScript plugins extend the file manager's functionality on the client side using `window.MyFileManagerPlugins` and `fm.registerPlugin()`.
 
 #### Plugin Structure
 
@@ -854,181 +843,55 @@ JavaScript plugins extend the file manager's functionality on the client side. H
         var plugin = {
             name: 'MyCustomPlugin',
             version: '1.0.0',
-            fileManager: fm
-        };
-
-        /**
-         * Initialize plugin
-         */
-        plugin.init = function() {
-            console.log('Plugin initialized');
-
-            // Access file manager
-            var currentPath = fm.state.currentPath;
-
-            // Register context menu item
-            fm.addContextMenuItem({
-                label: 'My Action',
-                icon: '⚡',
-                condition: function(files) {
-                    // Show only for single file selection
-                    return files.length === 1;
-                },
-                action: function(files) {
-                    plugin.doSomething(files[0]);
+            fileManager: fm,
+            contextMenuItems: [
+                {
+                    action: 'my-custom-action',
+                    label: '⚡ My Action',
+                    condition: function(selectedFiles, fileManager) {
+                        return selectedFiles.length === 1 && selectedFiles[0].mime !== 'directory';
+                    },
+                    handler: function(selectedFiles, fileManager) {
+                        alert('Action on: ' + selectedFiles[0].name);
+                    }
                 }
-            });
+            ]
         };
 
-        /**
-         * Plugin method
-         */
-        plugin.doSomething = function(file) {
-            alert('Action on: ' + file.name);
-        };
-
-        // Auto-initialize
-        plugin.init();
-
+        fm.registerPlugin(plugin);
         return plugin;
     }
 
-    // Register plugin globally
-    if (window.MyFileManager) {
-        window.MyFileManager.plugins = window.MyFileManager.plugins || [];
-        window.MyFileManager.plugins.push(MyCustomPlugin);
+    if (!window.MyFileManagerPlugins) {
+        window.MyFileManagerPlugins = [];
     }
+    window.MyFileManagerPlugins.push(MyCustomPlugin);
 
 })(window);
 ```
 
-#### Plugin Features
-
-**1. Context Menu Integration**
-
-Add custom items to the context menu:
-
-```javascript
-fm.addContextMenuItem({
-    label: 'Open in External Editor',
-    icon: '📝',
-    condition: function(files) {
-        // Show only for text files
-        return files.length === 1 && files[0].mime.startsWith('text/');
-    },
-    action: function(files) {
-        window.open('https://editor.example.com?file=' + files[0].hash);
-    }
-});
-```
-
-**2. Menu Bar Integration**
-
-Add items to the top menu bar:
-
-```javascript
-customMenus: [
-    {
-        label: 'Tools',
-        icon: '🔧',
-        action: function(fm) {
-            // Your action
-        }
-    }
-]
-```
-
-**3. Custom Modals**
-
-Create custom modals:
-
-```javascript
-var modal = document.createElement('div');
-modal.className = 'mfm-modal';
-modal.innerHTML = `
-    <div class="mfm-modal-dialog">
-        <div class="mfm-modal-header">
-            <h3>Custom Dialog</h3>
-            <button class="mfm-modal-close">&times;</button>
-        </div>
-        <div class="mfm-modal-body">
-            <p>Your content here</p>
-        </div>
-    </div>
-`;
-document.body.appendChild(modal);
-```
-
-**4. File Operations**
-
-Access and modify files:
-
-```javascript
-plugin.processFile = function(file) {
-    // Read file
-    fm.request('download', { target: file.hash }).then(function(data) {
-        // Process data
-        console.log('File data:', data);
-    });
-};
-```
-
-**5. Event Listeners**
-
-Listen to file manager events:
-
-```javascript
-plugin.init = function() {
-    fm.on('fileSelect', function(files) {
-        console.log('Files selected:', files);
-    });
-
-    fm.on('directoryChange', function(path) {
-        console.log('Directory changed:', path);
-    });
-};
-```
-
 ### Built-in JavaScript Plugins
 
-#### Text Editor Plugin
-
-Provides in-browser text file editing with syntax highlighting and line numbers.
-
-**Features:**
-- Line numbers
-- Syntax highlighting (basic)
-- Find & replace
-- Save/overwrite functionality
-- Character/word/line count
-
-**Usage:**
-```html
-<script src="js/plugins/myfilemanager-text-editor.js"></script>
-```
+#### Text Editor Plugin (`js/plugins/myfilemanager-text-editor.js`)
+Provides in-browser text file editing with line numbers, undo/redo history, word-wrap toggle, and overwrite option.
 
 **Supported Extensions:**
-`txt`, `md`, `log`, `json`, `xml`, `csv`, `html`, `css`, `js`, `php`, `py`, `java`, etc.
+`txt`, `md`, `log`, `json`, `xml`, `csv`, `html`, `htm`, `css`, `js`, `php`, `py`, `java`, `c`, `cpp`, `h`, `sh`, `bat`, `yaml`, `yml`, `ini`, `conf`, `cfg`
 
-#### Image Editor Plugin
-
-Provides basic image editing capabilities.
-
-**Features:**
-- Rotate (90°, 180°, 270°)
-- Flip (horizontal/vertical)
-- Crop
-- Resize
-- Brightness/Contrast adjustments
-- Save edited image
-
-**Usage:**
-```html
-<script src="js/plugins/myfilemanager-image-editor.js"></script>
-```
+#### Image Editor Plugin (`js/plugins/myfilemanager-image-editor.js`)
+Provides canvas-based raster image editing (rotate 90°, flip horizontal/vertical, free crop with scaled coordinates, and save/overwrite).
 
 **Supported Formats:**
 `jpg`, `jpeg`, `png`, `gif`, `webp`, `bmp`
+
+#### Video Editor Plugin (`js/plugins/myfilemanager-video-editor.js`)
+Provides timeline trimming, cropping, resizing, and timed blur overlays processed safely on the server via `video_editor.php`.
+
+**Supported Formats:**
+`mp4`, `webm`, `avi`, `mov`, `mkv`, `flv`, `m4v`, `ogv` (outputs `mp4` or `webm`)
+
+#### Public Link Plugin (`js/plugins/public-link-plugin.js`)
+Allows users to generate and manage shareable download links (`public` or `registered` users only) with configurable expiration, wait countdown, and download limits.
 
 ---
 
@@ -1036,319 +899,66 @@ Provides basic image editing capabilities.
 
 ### Core PHP Files
 
-#### `connector.php`
-Main API endpoint that handles all requests.
-
-**Responsibilities:**
-- Request routing
-- Authentication validation
-- Security checks (token, IP whitelist)
-- Command execution
-- Response formatting
+#### `src/connector.php`
+Main API endpoint that handles all requests:
+- Authentication & Bearer/POST HMAC token validation
+- Strict origin/CORS checking and IP whitelist enforcement
+- Plugin loading and routing (`publiclink_*`, `video_process`, `upload`, and core commands)
+- Pre-upload folder policies (`readOnlyFolders`, `uploadBlockedFolders`), quota checks, and ClamAV scanning
 
 **API Commands:**
-- `open` - Open directory
-- `upload` - Upload file
-- `download` - Download file
-- `delete` - Delete file/folder
-- `rename` - Rename file/folder
-- `copy` - Copy files
-- `cut` - Move files
-- `mkdir` - Create directory
-- `search` - Search files
-- `info` - Get file information
-- `restore` - Restore from trash
+`open`, `upload`, `download`, `delete`, `rename`, `copy`, `cut`, `mkdir`, `search`, `info`, `restore`
 
-**Request Format:**
-```
-POST/GET: connector.php?cmd=open&target=base64Hash
-```
+#### `src/myfilemanager.php`
+Core file manager class enforcing directory permissions, folder protections, quota calculations, safe RFC 5987 streaming downloads, and relative-path trash/restore handling.
 
-**Response Format:**
-```json
-{
-    "cwd": {
-        "hash": "...",
-        "name": "Root",
-        "mime": "directory",
-        "read": true,
-        "write": true
-    },
-    "files": [
-        {
-            "name": "document.pdf",
-            "hash": "ZG9jdW1lbnQucGRm",
-            "mime": "application/pdf",
-            "size": 12345,
-            "ts": 1638360000,
-            "read": true,
-            "write": true
-        }
-    ]
-}
-```
+#### `src/chunkuploader.php`
+Handles single and chunked file uploads:
+- Strict `uploadId` sanitization
+- Streaming chunk assembly (`stream_copy_to_stream`) with concurrency locking
+- Total assembled file size and quota enforcement across chunks
+- Server-side MIME inspection (`finfo`) and automatic orphan chunk cleanup
 
-#### `myfilemanager.php`
-Core file manager class with all file operations.
-
-**Key Methods:**
-- `execute($cmd, $params)` - Execute command
-- `cmdOpen($params)` - Open directory
-- `cmdUpload($params)` - Handle upload
-- `cmdDownload($params)` - Download file
-- `cmdDelete($params)` - Delete files
-- `cmdRename($params)` - Rename file
-- `cmdCopy($params)` - Copy files
-- `cmdCut($params)` - Move files
-- `cmdMkdir($params)` - Create directory
-- `cmdSearch($params)` - Search files
-- `cmdInfo($params)` - Get file info
-- `cmdRestore($params)` - Restore from trash
-
-**Security Features:**
-- Path traversal protection
-- Permission checking
-- Quota enforcement
-- Extension filtering
-- MIME type validation
-
-#### `chunkuploader.php`
-Handles chunked file uploads for large files.
-
-**Features:**
-- Automatic chunk assembly
-- Temporary chunk storage
-- MIME type validation after merge
-- Unique filename generation
-- Cleanup of old chunks
-
-**Chunk Upload Flow:**
-1. Client splits file into chunks
-2. Each chunk uploaded with part index
-3. Server stores chunks in temp directory
-4. When all chunks received, merge into final file
-5. Validate MIME type
-6. Move to destination
-7. Clean up temp chunks
-
-#### `security.php`
-Security utilities and validation.
-
-**Methods:**
-- `isPathSafe($path, $rootPath)` - Check path traversal
-- `sanitizeFilename($filename)` - Sanitize filename
-- `generateToken($secret, $userId)` - Generate auth token
-- `validateToken($token, $secret, $userId)` - Validate token
-- `isAllowedMimeType($mime, $allowed)` - Check MIME type
-- `hasBlockedExtension($filename, $blocked)` - Check extension
-
----
+#### `src/security.php`
+Security utilities:
+- `isPathSafe($path, $basePath)` - Validates relative and absolute paths against `realpath($basePath)` (blocks traversal and symlink escapes)
+- `sanitizeFilename($filename)` - Strips path separators, null bytes, control chars, and trailing dots
+- `sanitizeUploadId($uploadId)` - Enforces safe `[a-zA-Z0-9_-]` chunk IDs
+- `generateToken($secret, $userId)` / `validateToken($token, $secret, $userId)` - Constant-time HMAC-SHA256 token generation and validation
+- `isAllowedMimeType($mime, $allowed)` - Escaped wildcard MIME pattern matching
+- `hasBlockedExtension($filename, $blocked)` - Detects trailing-dot and compound dangerous extensions (e.g., `aspx.cs`)
 
 ### PHP Plugin System
 
-#### Plugin Interface
+#### Plugin Interface (`src/plugins/plugininterface.php`)
 
-All PHP plugins must implement the `FileManagerPlugin` interface:
+Storage plugins implement `PluginInterface`:
 
 ```php
 <?php
-/**
- * File Manager Plugin Interface
- */
-interface FileManagerPlugin {
-    /**
-     * Get plugin name
-     * @return string
-     */
-    public function getName();
-
-    /**
-     * Initialize plugin
-     * @param array $config Configuration
-     */
-    public function init($config);
-
-    /**
-     * List files in path
-     * @param string $path Directory path
-     * @return array Files array
-     */
+interface PluginInterface {
+    public function __construct($config);
     public function listFiles($path);
-
-    /**
-     * Read file content
-     * @param string $path File path
-     * @return string File content
-     */
     public function readFile($path);
-
-    /**
-     * Write file content
-     * @param string $path File path
-     * @param string $content File content
-     * @return bool Success
-     */
     public function writeFile($path, $content);
-
-    /**
-     * Delete file or directory
-     * @param string $path Path to delete
-     * @return bool Success
-     */
     public function delete($path);
-
-    /**
-     * Create directory
-     * @param string $path Directory path
-     * @return bool Success
-     */
     public function createDirectory($path);
-
-    /**
-     * Rename/move file or directory
-     * @param string $oldPath Old path
-     * @param string $newPath New path
-     * @return bool Success
-     */
     public function rename($oldPath, $newPath);
-
-    /**
-     * Check if path exists
-     * @param string $path Path to check
-     * @return bool Exists
-     */
     public function exists($path);
+    public function getFileInfo($path);
 }
 ```
 
 ### Creating Custom PHP Plugins
 
-#### Example: FTP Plugin
+Place your plugin file in `src/plugins/<pluginname>.php` defining class `<pluginname>Plugin`, and enable it under `$config['plugins']['<pluginname>']['enabled'] = true` in `src/connector.php`.
 
-The included FTP plugin demonstrates how to create a storage backend plugin:
-
-```php
-<?php
-require_once 'plugininterface.php';
-
-/**
- * FTP Storage Plugin
- * Allows file manager to work with FTP servers
- */
-class FTPPlugin implements FileManagerPlugin {
-    private $connection;
-    private $config;
-
-    public function __construct($config) {
-        $this->config = $config;
-        $this->connect();
-    }
-
-    public function getName() {
-        return 'FTPPlugin';
-    }
-
-    public function init($config) {
-        // Initialization logic
-    }
-
-    private function connect() {
-        $this->connection = ftp_connect(
-            $this->config['host'], 
-            $this->config['port'] ?? 21
-        );
-
-        if (!$this->connection) {
-            throw new Exception('Could not connect to FTP server');
-        }
-
-        ftp_login(
-            $this->connection, 
-            $this->config['username'], 
-            $this->config['password']
-        );
-
-        if ($this->config['passive'] ?? true) {
-            ftp_pasv($this->connection, true);
-        }
-    }
-
-    public function listFiles($path) {
-        $list = ftp_nlist($this->connection, $path);
-        $files = [];
-
-        foreach ($list as $item) {
-            $files[] = $this->getFileInfo($item);
-        }
-
-        return $files;
-    }
-
-    public function readFile($path) {
-        $tempFile = tempnam(sys_get_temp_dir(), 'ftp_');
-
-        if (!ftp_get($this->connection, $tempFile, $path, FTP_BINARY)) {
-            throw new Exception('Could not download file from FTP');
-        }
-
-        $content = file_get_contents($tempFile);
-        unlink($tempFile);
-
-        return $content;
-    }
-
-    public function writeFile($path, $content) {
-        $tempFile = tempnam(sys_get_temp_dir(), 'ftp_');
-        file_put_contents($tempFile, $content);
-
-        $result = ftp_put($this->connection, $path, $tempFile, FTP_BINARY);
-        unlink($tempFile);
-
-        return $result;
-    }
-
-    // Implement other interface methods...
-}
-```
-
-#### Using the Plugin
-
-```php
-// In connector.php
-require_once 'src/plugins/ftpplugin.php';
-
-$ftpConfig = [
-    'host' => 'ftp.example.com',
-    'port' => 21,
-    'username' => 'ftpuser',
-    'password' => 'ftppass',
-    'passive' => true
-];
-
-$ftpPlugin = new FTPPlugin($ftpConfig);
-
-$config['plugins'][] = $ftpPlugin;
-```
-
-#### Plugin Use Cases
-
-**1. Cloud Storage Integration**
-- Amazon S3 plugin
-- Google Drive plugin
-- Dropbox plugin
-
-**2. Database Storage**
-- Store files in database (BLOB)
-- Metadata management
-
-**3. Virtual Filesystems**
-- Git repository browser
-- Archive browser (ZIP, TAR)
-
-**4. Custom Processing**
-- Automatic image optimization
-- Document conversion
-- Virus scanning
+**Built-in PHP Plugins:**
+- **`clamav.php`**: Scans completed uploads using `clamdscan` and automatically destroys infected files.
+- **`publiclinks.php`**: Manages 64-character hex tokens stored as `.htaccess`-protected JSON files, paired with `download.php`.
+- **`video_editor.php`**: Processes video trim/crop/resize/blur via FFmpeg using strict format whitelists (`mp4`/`webm`) and atomic temporary files.
+- **`rate_limiter.php`**: IP-based rate limiting for video processing using APCu or TTL-verified JSON cache files.
+- **`ftpplugin.php`**: `PluginInterface` implementation for FTP/FTPS storage backends.
 
 ---
 
@@ -1356,72 +966,72 @@ $config['plugins'][] = $ftpPlugin;
 
 ### End-to-End Encryption
 
-My File Manager supports client-side encryption using **AES-256-GCM** with **PBKDF2** key derivation.
+My File Manager supports client-side encryption using **AES-256-GCM** (WebCrypto API) with **PBKDF2** (100,000 iterations, SHA-256) key derivation, and an automatic **CryptoJS** AES-256-CTR + HMAC-SHA256 fallback (loaded via `<script>` with Subresource Integrity, without `eval()`).
 
 #### How It Works
 
-1. **Key Derivation**: User password → PBKDF2 (100,000 iterations) → 256-bit key
-2. **Encryption**: File data → AES-256-GCM → Encrypted data
-3. **Storage**: Encrypted files stored on server
-4. **Decryption**: Download → Decrypt in browser → Original file
+1. **Key Derivation**: User password + random 16-byte salt → PBKDF2 (100,000 iterations) → 256-bit key
+2. **Self-Contained Format**: Each encrypted file embeds an `MFMENC01` header + its own 16-byte salt + 12-byte IV + authenticated ciphertext, allowing decryption across sessions and devices using the same passphrase
+3. **Storage**: Server stores only `.encrypted` ciphertext (`application/octet-stream`)
+4. **Decryption**: Download → Decrypt in browser → Original file restored
 
-#### Enabling Encryption
+#### Important Server Configuration Requirement
 
-**Generate Encryption Key:**
+When `cryptFiles: true` is enabled on the client, encrypted files are uploaded with the `.encrypted` extension and MIME type `application/octet-stream`. You **must** include `'application/octet-stream'` in `$config['allowedMimeTypes']` inside `src/connector.php`, otherwise the server will reject encrypted uploads with HTTP 415:
+
+```php
+// In src/connector.php
+'allowedMimeTypes' => [
+    'image/*',
+    'video/*',
+    'audio/*',
+    'text/*',
+    'application/pdf',
+    'application/octet-stream' // Required when cryptFiles is enabled
+],
+```
+
+#### Enabling Encryption in JavaScript
+
+Let the user enter their passphrase via the **File → Set Encryption Key** menu, or pass a pre-derived key at initialization:
 
 ```javascript
-// Derive key from user password
+var fm = new MyFileManager('#filemanager', {
+    url: 'src/connector.php',
+    cryptFiles: true,
+    // Optional: exclude large media files from client-side encryption
+    cryptExclude: ['video/*', 'audio/*']
+});
+```
+
+Or initialize programmatically with a key:
+
+```javascript
 var password = 'user-secure-password';
 var salt = window.MyFileManagerCrypto.generateSalt();
 
 window.MyFileManagerCrypto.deriveKeyFromPassword(password, salt)
     .then(function(key) {
-        // Initialize file manager with encryption
         var fm = new MyFileManager('#filemanager', {
             url: 'src/connector.php',
             cryptFiles: true,
             encryptionKey: key,
             encryptionSalt: salt,
-            // Exclude large media files from encryption
             cryptExclude: ['video/*', 'audio/*']
         });
     });
 ```
 
-#### Selective Encryption
-
-Exclude specific MIME types from encryption:
-
-```javascript
-cryptExclude: [
-    'video/*',           // All videos
-    'audio/*',           // All audio
-    'image/jpeg',        // JPEG images only
-    'application/pdf'    // PDF files
-]
-```
-
-#### Security Notes
-
-- **WebCrypto API**: Used in modern browsers for native performance
-- **CryptoJS Fallback**: Loaded automatically for older browsers
-- **Zero Knowledge**: Server never sees unencrypted data or keys
-- **PBKDF2**: 100,000 iterations protect against brute force
-- **GCM Mode**: Authenticated encryption prevents tampering
-
 ---
 
 ### Custom Authentication
 
-Implement your own authentication logic with the `authCallback` function.
-
-#### Basic Authentication
+Implement your own authentication logic with `authCallback` in `src/connector.php`:
 
 ```php
 'authCallback' => function() {
-    // Check if user is logged in (your session logic)
     if (!isset($_SESSION['user_id'])) {
-        return false; // Not authenticated
+        return false; // Not authenticated (returns HTTP 401)
     }
 
     return [
@@ -1433,122 +1043,49 @@ Implement your own authentication logic with the `authCallback` function.
 }
 ```
 
-#### Database Authentication
-
-```php
-'authCallback' => function() use ($db) {
-    $userId = $_SESSION['user_id'] ?? null;
-
-    if (!$userId) {
-        return false;
-    }
-
-    // Fetch user from database
-    $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$userId]);
-    $user = $stmt->fetch();
-
-    if (!$user) {
-        return false;
-    }
-
-    return [
-        'id' => $user['id'],
-        'username' => $user['username'],
-        'quota' => $user['quota_bytes'],
-        'permissions' => json_decode($user['permissions'])
-    ];
-}
-```
-
-#### API Token Authentication
-
-```php
-'authCallback' => function() use ($db) {
-    // Get token from header
-    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-    $token = str_replace('Bearer ', '', $authHeader);
-
-    if (empty($token)) {
-        return false;
-    }
-
-    // Validate token
-    $stmt = $db->prepare("SELECT * FROM api_tokens WHERE token = ? AND expires_at > NOW()");
-    $stmt->execute([$token]);
-    $tokenData = $stmt->fetch();
-
-    if (!$tokenData) {
-        return false;
-    }
-
-    // Get user
-    $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$tokenData['user_id']]);
-    $user = $stmt->fetch();
-
-    return [
-        'id' => $user['id'],
-        'username' => $user['username'],
-        'quota' => $user['quota_bytes'],
-        'permissions' => json_decode($user['permissions'])
-    ];
-}
-```
-
 ---
 
 ### Token-Based Security
 
-Enable HMAC-SHA256 token authentication for enhanced security.
+Enable HMAC-SHA256 token authentication in `src/connector.php`:
 
-#### Enable Token Auth
-This will send the token in header (bearer authentication)
 ```php
 'security' => [
     'enableTokenAuth' => true,
     'tokenSecret' => 'your-long-random-secret-key-change-this',
     'enableIPWhitelist' => false,
-    'allowedIPs' => []
+    'allowedIPs' => [],
+    'allowedOrigins' => [] // Empty = same-origin only
 ]
 ```
 
-#### Generate Token (PHP HMAC-SHA256)
-Enable the token auth in the connector.php and then generate the hmac-sha256 token with expiriation configurable in security.php (default 12 hours)
+Generate the token on the server (`src/security.php`):
 
 ```php
 require_once 'src/security.php';
 
 $userId = 'user123';
 $secret = 'your-long-random-secret-key-change-this';
-
 $token = Security::generateToken($secret, $userId);
-echo "Token: " . $token;
 ```
 
-#### Use Token in JavaScript
+Pass it to the JavaScript client (automatically sent via `Authorization: Bearer` header and POST body):
 
 ```javascript
 var fm = new MyFileManager('#filemanager', {
     url: 'src/connector.php',
-    token: '<?php echo $token ?>' //generated-token-here
+    token: '<?php echo htmlspecialchars($token, ENT_QUOTES, "UTF-8"); ?>'
 });
 ```
 
-#### IP Whitelist
+---
 
-Restrict access to specific IP addresses:
+### Server-Side Hardening
 
-```php
-'security' => [
-    'enableIPWhitelist' => true,
-    'allowedIPs' => [
-        '127.0.0.1',
-        '192.168.1.100',
-        '10.0.0.0/8' // CIDR notation supported
-    ]
-]
-```
+- **Path & Symlink Confinement**: All resolved paths (including chunk temporary directories, trash operations, video processing, and public link downloads) are verified to stay strictly inside `realpath($rootPath)`.
+- **Safe File Serving**: Keep `files/` outside your web root or disable script execution (`.php`, `.html`, `.svg`) inside `files/` via web server rules.
+- **CORS Policy**: Only same-origin requests or origins explicitly listed in `$config['security']['allowedOrigins']` receive credentialed CORS headers.
+- **Public Links Security**: `download.php` validates 64-character hex tokens, enforces `flock()` atomic download counters, and verifies `wait_seconds` via PHP sessions.
 
 ---
 
@@ -1558,64 +1095,38 @@ Restrict access to specific IP addresses:
 
 #### Custom Menu Bar Items
 
-Add items to the Windows-style menu bar:
-
 ```javascript
 var fm = new MyFileManager('#filemanager', {
     customMenus: [
         {
-            label: 'Export',
-            icon: '📤',
-            action: function(fm) {
-                var selected = fm.getSelectedFiles();
-                if (selected.length === 0) {
-                    alert('Please select files to export');
-                    return;
-                }
-                // Your export logic
-                console.log('Exporting:', selected);
-            }
-        },
-        {
-            label: 'Settings',
-            icon: '⚙️',
-            action: function(fm) {
-                // Open settings dialog
-            }
+            id: 'custom',
+            label: 'Tools',
+            items: [
+                { id: 'export', label: 'Export', icon: '📤', action: 'custom-export' },
+                { id: 'settings', label: 'Settings', icon: '⚙️', action: 'custom-settings' }
+            ]
         }
-    ]
+    ],
+    onCustomMenuAction: function(action) {
+        console.log('Custom action:', action);
+    }
 });
 ```
 
 #### Custom Context Menu Items
 
-Add right-click context menu entries:
-
 ```javascript
 var fm = new MyFileManager('#filemanager', {
     customContextMenu: [
         {
-            label: 'Open in New Tab',
-            icon: '🔗',
-            condition: function(files) {
-                // Show only for single file
-                return files.length === 1 && files[0].mime !== 'directory';
-            },
-            action: function(files, fm) {
-                var file = files[0];
-                window.open(file.url, '_blank');
-            }
-        },
-        {
-            label: 'Share via Email',
-            icon: '📧',
+            action: 'custom-share',
+            label: '📧 Share Selected',
             condition: function(files) {
                 return files.length > 0;
             },
-            action: function(files, fm) {
-                var fileNames = files.map(f => f.name).join(', ');
-                window.location.href = 'mailto:?subject=Shared Files&body=' + 
-                    encodeURIComponent('I shared: ' + fileNames);
+            handler: function(files, fm) {
+                var fileNames = files.map(function(f) { return f.name; }).join(', ');
+                alert('Selected: ' + fileNames);
             }
         }
     ]
@@ -1624,25 +1135,9 @@ var fm = new MyFileManager('#filemanager', {
 
 ### Custom Icons
 
-Replace default PNG icons with your own:
-
-1. **Icon Locations**: `assets/`
-2. **Icon Size**: 48x48px PNG (responsive design)
-3. **Icon Names**:
-   - `folder.png` - Directory icon
-   - `file.png` - Default file icon
-   - `image.png` - Image files
-   - `video.png` - Video files
-   - `audio.png` - Audio files
-   - `document.png` - Document files
-   - `archive.png` - Archive files
-   - `code.png` - Code files
-
-Simply replace the PNG files in `assets/icons/` directory with your custom icons.
+Replace default PNG icons in `assets/` with your own PNG files (`folder.png`, `file.png`, `picture.png`, `video.png`, `audio.png`, `text.png`, `archive.png`, `pdf.png`, `word.png`, `excel.png`, `powerpoint.png`, `trash-empty.png`, `trash-full.png`, and toolbar arrow icons).
 
 ### Brand Logo
-
-Add your company logo to the file manager:
 
 ```javascript
 var fm = new MyFileManager('#filemanager', {
@@ -1653,11 +1148,7 @@ var fm = new MyFileManager('#filemanager', {
 });
 ```
 
-The logo appears in the toolbar and can be clicked to navigate to your website.
-
 ### Themes
-
-#### Using Built-in Themes
 
 ```javascript
 var fm = new MyFileManager('#filemanager', {
@@ -1665,40 +1156,15 @@ var fm = new MyFileManager('#filemanager', {
 });
 
 // Change theme dynamically
-fm.setTheme('dark');
-```
-
-#### Custom Theme CSS
-
-Create your own theme by overriding CSS variables:
-
-```css
-/* custom-theme.css */
-.myfilemanager {
-    --mfm-bg-color: #1a1a1a;
-    --mfm-text-color: #e0e0e0;
-    --mfm-border-color: #333;
-    --mfm-hover-bg: #2a2a2a;
-    --mfm-selected-bg: #0066cc;
-    --mfm-toolbar-bg: #252525;
-    --mfm-modal-bg: #2a2a2a;
-}
-```
-
-Load your custom theme:
-
-```html
-<link rel="stylesheet" href="css/myfilemanager.css">
-<link rel="stylesheet" href="css/custom-theme.css">
+fm.options.theme = 'light';
+fm.applyTheme();
 ```
 
 ---
 
 ## Internationalization (i18n)
 
-My File Manager includes built-in translations for multiple languages.
-
-### Supported Languages
+My File Manager includes built-in translations for 18 languages:
 
 - **en** - English
 - **it** - Italian (Italiano)
@@ -1723,31 +1189,7 @@ My File Manager includes built-in translations for multiple languages.
 
 ```javascript
 var fm = new MyFileManager('#filemanager', {
-    lang: 'it' // Italian
-});
-```
-
-### Add Custom Translation
-
-Edit `js/i18n.js` to add your language:
-
-```javascript
-window.MyFileManagerI18n['nl'] = { // Dutch
-    fileManager: 'Bestandsbeheerder',
-    file: 'Bestand',
-    folder: 'Map',
-    upload: 'Uploaden',
-    download: 'Downloaden',
-    delete: 'Verwijderen',
-    // ... add all translations
-};
-```
-
-Use the new language:
-
-```javascript
-var fm = new MyFileManager('#filemanager', {
-    lang: 'nl'
+    lang: 'it'
 });
 ```
 
@@ -1771,17 +1213,15 @@ var fm = new MyFileManager('#filemanager', {
 ### Legacy Browser Support
 
 For older browsers without WebCrypto API:
-- CryptoJS automatically loaded as fallback
-- Encryption still works but slightly slower
+- CryptoJS 4.2.0 is loaded via `<script>` with Subresource Integrity (SRI) as fallback
+- Uses authenticated AES-256-CTR + HMAC-SHA256 encryption
 - All other features fully supported
 
 ### Required Features
 
 - JavaScript enabled
-- Cookies/LocalStorage (for preferences)
-- XMLHttpRequest or Fetch API
-- File API (for uploads)
-- Blob API (for downloads)
+- XMLHttpRequest / Fetch API
+- File API & Blob API
 
 ---
 
@@ -1880,4 +1320,4 @@ SOFTWARE.
 
 Made with ❤️ by Oscar Cosimo & MYETV Team
 
-[⭐ Star us on GitHub](https://github.com/yourusername/my-file-manager-opensource)
+[⭐ Star us on GitHub](https://github.com/OskarCosimo/My-File-Manager-Opensource)
